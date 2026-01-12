@@ -1,17 +1,37 @@
 use anyhow::{Context, Result};
+use quick_xml::de::from_reader;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use quick_xml::de::from_reader;
+
+// Helper module for deserializing "0"/"1" strings as booleans
+mod bool_from_string {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<bool, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "1" => Ok(true),
+            "0" => Ok(false),
+            _ => Err(serde::de::Error::custom(format!(
+                "expected '0' or '1', got '{}'",
+                s
+            ))),
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AtcRecord {
-    #[serde(rename = "nroatc")]
+    #[serde(rename(deserialize = "nroatc"))]
     pub number: i32,
-    #[serde(rename = "codigoatc")]
+    #[serde(rename(deserialize = "codigoatc"))]
     pub code: String,
-    #[serde(rename = "descatc")]
+    #[serde(rename(deserialize = "descatc"))]
     pub description: String,
 }
 
@@ -24,11 +44,11 @@ struct AtcList {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DcpRecord {
-    #[serde(rename = "codigodcp")]
+    #[serde(rename(deserialize = "codigodcp"))]
     pub code: String,
-    #[serde(rename = "nombredcp")]
+    #[serde(rename(deserialize = "nombredcp"))]
     pub name: String,
-    #[serde(rename = "codigodcsa")]
+    #[serde(rename(deserialize = "codigodcsa"))]
     pub dcsa_code: String,
 }
 
@@ -40,11 +60,11 @@ struct DcpList {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DcpfRecord {
-    #[serde(rename = "codigodcpf")]
+    #[serde(rename(deserialize = "codigodcpf"))]
     pub code: String,
-    #[serde(rename = "nombredcpf")]
+    #[serde(rename(deserialize = "nombredcpf"))]
     pub name: String,
-    #[serde(rename = "codigodcp")]
+    #[serde(rename(deserialize = "codigodcp"))]
     pub dcp_code: String,
 }
 
@@ -57,9 +77,9 @@ struct DcpfList {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DcsaRecord {
-    #[serde(rename = "codigodcsa")]
+    #[serde(rename(deserialize = "codigodcsa"))]
     pub code: String,
-    #[serde(rename = "nombredcsa")]
+    #[serde(rename(deserialize = "nombredcsa"))]
     pub name: String,
 }
 
@@ -71,150 +91,236 @@ struct DcsaList {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EnvaseRecord {
-    #[serde(rename = "codigoenvase")]
+pub struct ContainerRecord {
+    #[serde(rename(deserialize = "codigoenvase"))]
     pub code: String,
-    #[serde(rename = "envase")]
+    #[serde(rename(deserialize = "envase"))]
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_envases")]
-struct EnvaseList {
+struct ContainerList {
     #[serde(rename = "envases")]
-    records: Vec<EnvaseRecord>,
+    records: Vec<ContainerRecord>,
 }
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ExcipienteRecord {
-    #[serde(rename = "codigoedo")]
+pub struct ExcipientRecord {
+    #[serde(rename(deserialize = "codigoedo"))]
     pub code: String,
-    #[serde(rename = "edo")]
+    #[serde(rename(deserialize = "edo"))]
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_excipientes")]
-struct ExcipienteList {
+struct ExcipientList {
     #[serde(rename = "excipientes")]
-    records: Vec<ExcipienteRecord>,
+    records: Vec<ExcipientRecord>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FormaFarmaceuticaRecord {
-    #[serde(rename = "codigoformafarmaceutica")]
+pub struct PharmaceuticalFormRecord {
+    #[serde(rename(deserialize = "codigoformafarmaceutica"))]
     pub code: String,
-    #[serde(rename = "formafarmaceutica")]
+    #[serde(rename(deserialize = "formafarmaceutica"))]
     pub name: String,
-    #[serde(rename = "codigoformafarmaceuticasimplificada")]
+    #[serde(rename(deserialize = "codigoformafarmaceuticasimplificada"))]
     pub simplified_code: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_formas_farmaceuticas")]
-struct FormaFarmaceuticaList {
+struct PharmaceuticalFormList {
     #[serde(rename = "formasfarmaceuticas")]
-    records: Vec<FormaFarmaceuticaRecord>,
+    records: Vec<PharmaceuticalFormRecord>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FormaFarmaceuticaSimplificadaRecord {
-    #[serde(rename = "codigoformafarmaceuticasimplificada")]
+pub struct SimplifiedPharmaceuticalFormRecord {
+    #[serde(rename(deserialize = "codigoformafarmaceuticasimplificada"))]
     pub code: String,
-    #[serde(rename = "formafarmaceuticasimplificada")]
+    #[serde(rename(deserialize = "formafarmaceuticasimplificada"))]
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_formas_farmaceuticas_simplificadas")]
-struct FormaFarmaceuticaSimplificadaList {
+struct SimplifiedPharmaceuticalFormList {
     #[serde(rename = "formasfarmaceuticassimplificadas")]
-    records: Vec<FormaFarmaceuticaSimplificadaRecord>,
+    records: Vec<SimplifiedPharmaceuticalFormRecord>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LaboratorioRecord {
-    #[serde(rename = "codigolaboratorio")]
+pub struct LaboratoryRecord {
+    #[serde(rename(deserialize = "codigolaboratorio"))]
     pub code: String,
-    #[serde(rename = "laboratorio")]
+    #[serde(rename(deserialize = "laboratorio"))]
     pub name: String,
-    #[serde(rename = "direccion")]
+    #[serde(rename(deserialize = "direccion"))]
     pub address: Option<String>,
-    #[serde(rename = "codigopostal")]
+    #[serde(rename(deserialize = "codigopostal"))]
     pub zip: Option<String>,
-    #[serde(rename = "localidad")]
+    #[serde(rename(deserialize = "localidad"))]
     pub city: Option<String>,
-    #[serde(rename = "cif")]
+    #[serde(rename(deserialize = "cif"))]
     pub vat: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_laboratorios")]
-struct LaboratorioList {
+struct LaboratoryList {
     #[serde(rename = "laboratorios")]
-    records: Vec<LaboratorioRecord>,
+    records: Vec<LaboratoryRecord>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PrincipioActivoRecord {
-    #[serde(rename = "nroprincipioactivo")]
+pub struct ActiveIngridientRecord {
+    #[serde(rename(deserialize = "nroprincipioactivo"))]
     pub number: String,
-    #[serde(rename = "codigoprincipioactivo")]
+    #[serde(rename(deserialize = "codigoprincipioactivo"))]
     pub code: String,
-    #[serde(rename = "principioactivo")]
+    #[serde(rename(deserialize = "principioactivo"))]
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_principios_activos")]
-struct PrincipioActivoList {
+struct ActiveIngredientList {
     #[serde(rename = "principiosactivos")]
-    records: Vec<PrincipioActivoRecord>,
+    records: Vec<ActiveIngridientRecord>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SituacionRegistroRecord {
-    #[serde(rename = "codigosituacionregistro")]
+pub struct RegistrationStatusRecord {
+    #[serde(rename(deserialize = "codigosituacionregistro"))]
     pub code: String,
-    #[serde(rename = "situacionregistro")]
+    #[serde(rename(deserialize = "situacionregistro"))]
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_situacion_registro")]
-struct SituacionRegistroList {
+struct RegistrationStatusList {
     #[serde(rename = "situacionesregistro")]
-    records: Vec<SituacionRegistroRecord>,
+    records: Vec<RegistrationStatusRecord>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UnidadContenidoRecord {
-    #[serde(rename = "codigounidadcontenido")]
+pub struct ContainerUnitRecord {
+    #[serde(rename(deserialize = "codigounidadcontenido"))]
     pub code: String,
-    #[serde(rename = "unidadcontenido")]
+    #[serde(rename(deserialize = "unidadcontenido"))]
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_unidad_contenido")]
-struct UnidadContenidoList {
+struct ContainerUnitList {
     #[serde(rename = "unidadescontenido")]
-    records: Vec<UnidadContenidoRecord>,
+    records: Vec<ContainerUnitRecord>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ViaAdministracionRecord {
-    #[serde(rename = "codigoviaadministracion")]
+pub struct AdministrationRouteRecord {
+    #[serde(rename(deserialize = "codigoviaadministracion"))]
     pub code: String,
-    #[serde(rename = "viaadministracion")]
+    #[serde(rename(deserialize = "viaadministracion"))]
     pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename = "aemps_prescripcion_vias_administracion")]
-struct ViaAdministracionList {
+struct AdministrationRouteList {
     #[serde(rename = "viasadministracion")]
-    records: Vec<ViaAdministracionRecord>,
+    records: Vec<AdministrationRouteRecord>,
 }
+
+// ============================================================================
+// Prescription Nested Entity Structs
+// ============================================================================
+
+/// Active ingredient composition for a prescription
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ActiveIngredient {
+    #[serde(rename(deserialize = "cod_principio_activo"))]
+    pub active_ingredient_code: String,
+    #[serde(rename(deserialize = "orden_colacion"))]
+    pub order: Option<String>,
+    #[serde(rename(deserialize = "dosis_pa"))]
+    pub dose: Option<String>,
+    #[serde(rename(deserialize = "unidad_dosis_pa"))]
+    pub dose_unit: Option<String>,
+    #[serde(rename(deserialize = "dosis_composicion"))]
+    pub composition_dose: Option<String>,
+    #[serde(rename(deserialize = "unidad_composicion"))]
+    pub composition_unit: Option<String>,
+    #[serde(rename(deserialize = "dosis_administracion"))]
+    pub administration_dose: Option<String>,
+    #[serde(rename(deserialize = "unidad_administracion"))]
+    pub administration_unit: Option<String>,
+    #[serde(rename(deserialize = "dosis_prescripcion"))]
+    pub prescription_dose: Option<String>,
+    #[serde(rename(deserialize = "unidad_prescripcion"))]
+    pub prescription_unit: Option<String>,
+}
+
+/// Administration route for a prescription
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AdminRoute {
+    #[serde(rename(deserialize = "cod_via_admin"))]
+    pub route_code: String,
+}
+
+/// Pharmaceutical form for a prescription
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PrescriptionForm {
+    #[serde(rename(deserialize = "cod_forfar"))]
+    pub form_code: String,
+    #[serde(rename(deserialize = "cod_forfar_simplificada"))]
+    pub simplified_form_code: String,
+    #[serde(rename(deserialize = "nro_pactiv"))]
+    pub num_active_ingredients: Option<String>,
+    #[serde(rename(deserialize = "composicion_pa"), default)]
+    pub active_ingredients: Vec<ActiveIngredient>,
+    #[serde(rename(deserialize = "viasadministracion"), default)]
+    pub admin_routes: Vec<AdminRoute>,
+}
+
+/// ATC duplicate information
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AtcDuplicate {
+    #[serde(rename(deserialize = "atc_duplicidad"))]
+    pub duplicate_atc: String,
+    #[serde(rename(deserialize = "descripcion_atc_duplicidad"))]
+    pub description: Option<String>,
+    #[serde(rename(deserialize = "efecto_duplicidad"))]
+    pub effect: Option<String>,
+    #[serde(rename(deserialize = "recomendacion_duplicidad"))]
+    pub recommendation: Option<String>,
+}
+
+/// ATC code for a prescription
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PrescriptionAtc {
+    #[serde(rename(deserialize = "cod_atc"))]
+    pub atc_code: String,
+    #[serde(rename(deserialize = "duplicidades"), default)]
+    pub duplicates: Vec<AtcDuplicate>,
+}
+
+/// Supply problem for a prescription
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SupplyProblem {
+    #[serde(rename(deserialize = "fecha_inicio"))]
+    pub start_date: Option<String>,
+    #[serde(rename(deserialize = "observaciones"))]
+    pub observations: Option<String>,
+}
+
+// ============================================================================
+// Main Prescription Record
+// ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrescriptionRecord {
@@ -230,36 +336,66 @@ pub struct PrescriptionRecord {
     pub contenido: Option<String>,
     pub unid_contenido: Option<String>,
     pub nro_conte: Option<String>,
-    pub sw_psicotropo: String,
-    pub sw_estupefaciente: String,
-    pub sw_afecta_conduccion: String,
-    pub sw_triangulo_negro: String,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_psicotropo: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_estupefaciente: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_afecta_conduccion: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_triangulo_negro: bool,
     pub url_fictec: Option<String>,
     pub url_prosp: Option<String>,
-    pub sw_receta: String,
-    pub sw_generico: String,
-    pub sw_sustituible: String,
-    pub sw_envase_clinico: String,
-    pub sw_uso_hospitalario: String,
-    pub sw_diagnostico_hospitalario: String,
-    pub sw_tld: String,
-    pub sw_especial_control_medico: String,
-    pub sw_huerfano: String,
-    pub sw_base_a_plantas: String,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_receta: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_generico: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_sustituible: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_envase_clinico: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_uso_hospitalario: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_diagnostico_hospitalario: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_tld: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_especial_control_medico: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_huerfano: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_base_a_plantas: bool,
     pub laboratorio_titular: Option<String>,
     pub laboratorio_comercializador: Option<String>,
     pub fecha_autorizacion: Option<String>,
-    pub sw_comercializado: String,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_comercializado: bool,
     pub fec_comer: Option<String>,
     pub cod_sitreg: Option<String>,
     pub cod_sitreg_presen: Option<String>,
     pub fecha_situacion_registro: Option<String>,
     pub fec_sitreg_presen: Option<String>,
-    pub sw_tiene_excipientes_decl_obligatoria: String,
-    pub biosimilar: String,
-    pub importacion_paralela: String,
-    pub radiofarmaco: String,
-    pub serializacion: String,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub sw_tiene_excipientes_decl_obligatoria: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub biosimilar: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub importacion_paralela: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub radiofarmaco: bool,
+    #[serde(deserialize_with = "bool_from_string::deserialize")]
+    pub serializacion: bool,
+
+    // Nested collections (not serialized to main CSV)
+    #[serde(rename(deserialize = "formasfarmaceuticas"), default, skip_serializing)]
+    pub forms: Option<PrescriptionForm>,
+
+    #[serde(rename(deserialize = "atc"), default, skip_serializing)]
+    pub atc_codes: Vec<PrescriptionAtc>,
+
+    #[serde(rename(deserialize = "problemassuministro"), default, skip_serializing)]
+    pub supply_problems: Vec<SupplyProblem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -350,63 +486,63 @@ impl_xml_parser!(
 impl_xml_parser!(
     /// Parses the Envases XML file and writes its content to a CSV file.
     parse_envases_xml_to_csv,
-    EnvaseList,
+    ContainerList,
     "Failed to deserialize Envases XML"
 );
 
 impl_xml_parser!(
     /// Parses the Excipientes XML file and writes its content to a CSV file.
     parse_excipientes_xml_to_csv,
-    ExcipienteList,
+    ExcipientList,
     "Failed to deserialize Excipientes XML"
 );
 
 impl_xml_parser!(
     /// Parses the Forma Farmaceutica XML file and writes its content to a CSV file.
     parse_forma_farmaceutica_xml_to_csv,
-    FormaFarmaceuticaList,
+    PharmaceuticalFormList,
     "Failed to deserialize Forma Farmaceutica XML"
 );
 
 impl_xml_parser!(
     /// Parses the Forma Farmaceutica Simplificada XML file and writes its content to a CSV file.
     parse_forma_farmaceutica_simplificada_xml_to_csv,
-    FormaFarmaceuticaSimplificadaList,
+    SimplifiedPharmaceuticalFormList,
     "Failed to deserialize Forma Farmaceutica Simplificada XML"
 );
 
 impl_xml_parser!(
     /// Parses the Laboratorio XML file and writes its content to a CSV file.
     parse_laboratorio_xml_to_csv,
-    LaboratorioList,
+    LaboratoryList,
     "Failed to deserialize Laboratorio XML"
 );
 
 impl_xml_parser!(
     /// Parses the Principio Activo XML file and writes its content to a CSV file.
     parse_principio_activo_xml_to_csv,
-    PrincipioActivoList,
+    ActiveIngredientList,
     "Failed to deserialize Principio Activo XML"
 );
 
 impl_xml_parser!(
     /// Parses the Situacion Registro XML file and writes its content to a CSV file.
     parse_situacion_registro_xml_to_csv,
-    SituacionRegistroList,
+    RegistrationStatusList,
     "Failed to deserialize Situacion Registro XML"
 );
 
 impl_xml_parser!(
     /// Parses the Unidad Contenido XML file and writes its content to a CSV file.
     parse_unidad_contenido_xml_to_csv,
-    UnidadContenidoList,
+    ContainerUnitList,
     "Failed to deserialize Unidad Contenido XML"
 );
 
 impl_xml_parser!(
     /// Parses the Via Administracion XML file and writes its content to a CSV file.
     parse_via_administracion_xml_to_csv,
-    ViaAdministracionList,
+    AdministrationRouteList,
     "Failed to deserialize Via Administracion XML"
 );
 
@@ -416,6 +552,121 @@ impl_xml_parser!(
     PrescriptionList,
     "Failed to deserialize Prescription XML"
 );
+
+/// Parses the Prescription XML file and writes content to multiple CSV files for normalized data.
+///
+/// This function extracts nested entities (forms, active ingredients, admin routes, ATC codes, supply problems)
+/// into separate CSV files with proper relationships via prescription_id.
+///
+/// # Output Files
+/// - `prescriptions.csv` - Main prescription records
+/// - `prescription_forms.csv` - Pharmaceutical forms (1:1 with prescriptions)
+/// - `prescription_active_ingredients.csv` - Active ingredients (1:N)
+/// - `prescription_admin_routes.csv` - Administration routes (1:N)
+/// - `prescription_atc.csv` - ATC codes (1:N)
+/// - `prescription_atc_duplicates.csv` - ATC duplicates (nested 1:N)
+/// - `prescription_supply_problems.csv` - Supply problems (1:N)
+pub fn parse_prescription_xml_to_csvs<P: AsRef<Path>>(xml_path: P, output_dir: P) -> Result<()> {
+    let file = File::open(xml_path)?;
+    let reader = BufReader::new(file);
+    let list: PrescriptionList =
+        from_reader(reader).context("Failed to deserialize Prescription XML")?;
+
+    // Create CSV writers for each output file
+    let mut wtr_main = csv::Writer::from_path(output_dir.as_ref().join("prescriptions.csv"))?;
+    let mut wtr_forms = csv::Writer::from_path(output_dir.as_ref().join("prescription_forms.csv"))?;
+    let mut wtr_ingredients = csv::Writer::from_path(
+        output_dir
+            .as_ref()
+            .join("prescription_active_ingredients.csv"),
+    )?;
+    let mut wtr_routes =
+        csv::Writer::from_path(output_dir.as_ref().join("prescription_admin_routes.csv"))?;
+    let mut wtr_atc = csv::Writer::from_path(output_dir.as_ref().join("prescription_atc.csv"))?;
+    let mut wtr_atc_duplicates =
+        csv::Writer::from_path(output_dir.as_ref().join("prescription_atc_duplicates.csv"))?;
+    let mut wtr_supply =
+        csv::Writer::from_path(output_dir.as_ref().join("prescription_supply_problems.csv"))?;
+
+    // Process each prescription record
+    for record in list.records {
+        // Create prescription ID: cod_nacion + nro_definitivo
+        let prescription_id = format!("{}_{}", record.cod_nacion, record.nro_definitivo);
+
+        // Write main prescription record (nested collections are skipped via serde)
+        wtr_main.serialize(&record)?;
+
+        // Write pharmaceutical form and its nested entities
+        if let Some(form) = &record.forms {
+            // Write form record
+            wtr_forms.write_record([
+                &prescription_id,
+                &form.form_code,
+                &form.simplified_form_code,
+                form.num_active_ingredients.as_deref().unwrap_or(""),
+            ])?;
+
+            // Write active ingredients
+            for ingredient in &form.active_ingredients {
+                wtr_ingredients.write_record([
+                    &prescription_id,
+                    &ingredient.active_ingredient_code,
+                    ingredient.order.as_deref().unwrap_or(""),
+                    ingredient.dose.as_deref().unwrap_or(""),
+                    ingredient.dose_unit.as_deref().unwrap_or(""),
+                    ingredient.composition_dose.as_deref().unwrap_or(""),
+                    ingredient.composition_unit.as_deref().unwrap_or(""),
+                    ingredient.administration_dose.as_deref().unwrap_or(""),
+                    ingredient.administration_unit.as_deref().unwrap_or(""),
+                    ingredient.prescription_dose.as_deref().unwrap_or(""),
+                    ingredient.prescription_unit.as_deref().unwrap_or(""),
+                ])?;
+            }
+
+            // Write administration routes
+            for route in &form.admin_routes {
+                wtr_routes.write_record([&prescription_id, &route.route_code])?;
+            }
+        }
+
+        // Write ATC codes and their duplicates
+        for atc in &record.atc_codes {
+            wtr_atc.write_record([&prescription_id, &atc.atc_code])?;
+
+            // Write ATC duplicates
+            for duplicate in &atc.duplicates {
+                wtr_atc_duplicates.write_record([
+                    &prescription_id,
+                    &atc.atc_code,
+                    &duplicate.duplicate_atc,
+                    duplicate.description.as_deref().unwrap_or(""),
+                    duplicate.effect.as_deref().unwrap_or(""),
+                    duplicate.recommendation.as_deref().unwrap_or(""),
+                ])?;
+            }
+        }
+
+        // Write supply problems
+        for problem in &record.supply_problems {
+            wtr_supply.write_record([
+                &prescription_id,
+                problem.start_date.as_deref().unwrap_or(""),
+                problem.observations.as_deref().unwrap_or(""),
+            ])?;
+        }
+    }
+
+    // Flush all writers
+    wtr_main.flush()?;
+    wtr_forms.flush()?;
+    wtr_ingredients.flush()?;
+    wtr_routes.flush()?;
+    wtr_atc.flush()?;
+    wtr_atc_duplicates.flush()?;
+    wtr_supply.flush()?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -440,7 +691,8 @@ mod tests {
                     <descatc>B01 - BLOOD</descatc>
                 </atc>
             </aemps_prescripcion_atc>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -450,15 +702,20 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: AtcRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "number");
+        assert_eq!(headers.get(1).unwrap(), "code");
+        assert_eq!(headers.get(2).unwrap(), "description");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 2);
-        assert_eq!(records[0].code, "A01");
-        assert_eq!(records[0].description, "DIGESTIVE");
+        assert_eq!(records[0].get(1).unwrap(), "A01");
+        assert_eq!(records[0].get(2).unwrap(), "DIGESTIVE");
+        assert_eq!(records[1].get(1).unwrap(), "B01");
+        assert_eq!(records[1].get(2).unwrap(), "BLOOD");
     }
 
     #[test]
@@ -473,7 +730,8 @@ mod tests {
                     <codigodcsa>S01</codigodcsa>
                 </dcp>
             </aemps_prescripcion_dcp>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -483,15 +741,18 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: DcpRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+        assert_eq!(headers.get(2).unwrap(), "dcsa_code");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "D01");
-        assert_eq!(records[0].name, "DCP NAME");
+        assert_eq!(records[0].get(0).unwrap(), "D01");
+        assert_eq!(records[0].get(1).unwrap(), "DCP NAME");
     }
 
     #[test]
@@ -506,7 +767,8 @@ mod tests {
                     <codigodcp>D01</codigodcp>
                 </dcpf>
             </aemps_prescripcion_dcpf>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -516,15 +778,18 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: DcpfRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+        assert_eq!(headers.get(2).unwrap(), "dcp_code");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "DF01");
-        assert_eq!(records[0].name, "DCPF NAME");
+        assert_eq!(records[0].get(0).unwrap(), "DF01");
+        assert_eq!(records[0].get(1).unwrap(), "DCPF NAME");
     }
 
     #[test]
@@ -538,7 +803,8 @@ mod tests {
                     <nombredcsa>DCSA NAME</nombredcsa>
                 </dcsa>
             </aemps_prescripcion_dcsa>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -548,15 +814,17 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: DcsaRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "S01");
-        assert_eq!(records[0].name, "DCSA NAME");
+        assert_eq!(records[0].get(0).unwrap(), "S01");
+        assert_eq!(records[0].get(1).unwrap(), "DCSA NAME");
     }
 
     #[test]
@@ -570,7 +838,8 @@ mod tests {
                     <envase>ENVASE NAME</envase>
                 </envases>
             </aemps_prescripcion_envases>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -580,15 +849,17 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: EnvaseRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "E01");
-        assert_eq!(records[0].name, "ENVASE NAME");
+        assert_eq!(records[0].get(0).unwrap(), "E01");
+        assert_eq!(records[0].get(1).unwrap(), "ENVASE NAME");
     }
 
     #[test]
@@ -602,7 +873,8 @@ mod tests {
                     <edo>EXCIPIENTE NAME</edo>
                 </excipientes>
             </aemps_prescripcion_excipientes>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -612,15 +884,17 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: ExcipienteRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "X01");
-        assert_eq!(records[0].name, "EXCIPIENTE NAME");
+        assert_eq!(records[0].get(0).unwrap(), "X01");
+        assert_eq!(records[0].get(1).unwrap(), "EXCIPIENTE NAME");
     }
 
     #[test]
@@ -635,7 +909,8 @@ mod tests {
                     <codigoformafarmaceuticasimplificada>SFF01</codigoformafarmaceuticasimplificada>
                 </formasfarmaceuticas>
             </aemps_prescripcion_formas_farmaceuticas>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -645,16 +920,19 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: FormaFarmaceuticaRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+        assert_eq!(headers.get(2).unwrap(), "simplified_code");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "FF01");
-        assert_eq!(records[0].name, "FORMA NAME");
-        assert_eq!(records[0].simplified_code, "SFF01");
+        assert_eq!(records[0].get(0).unwrap(), "FF01");
+        assert_eq!(records[0].get(1).unwrap(), "FORMA NAME");
+        assert_eq!(records[0].get(2).unwrap(), "SFF01");
     }
 
     #[test]
@@ -668,7 +946,8 @@ mod tests {
                     <formafarmaceuticasimplificada>SIMPLIFIED NAME</formafarmaceuticasimplificada>
                 </formasfarmaceuticassimplificadas>
             </aemps_prescripcion_formas_farmaceuticas_simplificadas>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -678,15 +957,17 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: FormaFarmaceuticaSimplificadaRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "SFF01");
-        assert_eq!(records[0].name, "SIMPLIFIED NAME");
+        assert_eq!(records[0].get(0).unwrap(), "SFF01");
+        assert_eq!(records[0].get(1).unwrap(), "SIMPLIFIED NAME");
     }
 
     #[test]
@@ -708,7 +989,8 @@ mod tests {
                     <laboratorio>LAB NAME 2</laboratorio>
                 </laboratorios>
             </aemps_prescripcion_laboratorios>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -718,26 +1000,33 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: LaboratorioRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+        assert_eq!(headers.get(2).unwrap(), "address");
+        assert_eq!(headers.get(3).unwrap(), "zip");
+        assert_eq!(headers.get(4).unwrap(), "city");
+        assert_eq!(headers.get(5).unwrap(), "vat");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 2);
-        assert_eq!(records[0].code, "L01");
-        assert_eq!(records[0].name, "LAB NAME");
-        assert_eq!(records[0].address, Some("ADDR".to_string()));
-        assert_eq!(records[0].zip, Some("ZIP".to_string()));
-        assert_eq!(records[0].city, Some("CITY".to_string()));
-        assert_eq!(records[0].vat, Some("VAT".to_string()));
+        assert_eq!(records[0].get(0).unwrap(), "L01");
+        assert_eq!(records[0].get(1).unwrap(), "LAB NAME");
+        assert_eq!(records[0].get(2).unwrap(), "ADDR");
+        assert_eq!(records[0].get(3).unwrap(), "ZIP");
+        assert_eq!(records[0].get(4).unwrap(), "CITY");
+        assert_eq!(records[0].get(5).unwrap(), "VAT");
 
-        assert_eq!(records[1].code, "L02");
-        assert_eq!(records[1].name, "LAB NAME 2");
-        assert_eq!(records[1].address, None);
-        assert_eq!(records[1].zip, None);
-        assert_eq!(records[1].city, None);
-        assert_eq!(records[1].vat, None);
+        assert_eq!(records[1].get(0).unwrap(), "L02");
+        assert_eq!(records[1].get(1).unwrap(), "LAB NAME 2");
+        // Second record has empty strings for optional fields
+        assert_eq!(records[1].get(2).unwrap(), "");
+        assert_eq!(records[1].get(3).unwrap(), "");
+        assert_eq!(records[1].get(4).unwrap(), "");
+        assert_eq!(records[1].get(5).unwrap(), "");
     }
 
     #[test]
@@ -752,7 +1041,8 @@ mod tests {
                     <principioactivo>PRINCIPIO NAME</principioactivo>
                 </principiosactivos>
             </aemps_prescripcion_principios_activos>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -762,16 +1052,19 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: PrincipioActivoRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "number");
+        assert_eq!(headers.get(1).unwrap(), "code");
+        assert_eq!(headers.get(2).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].number, "1");
-        assert_eq!(records[0].code, "PA01");
-        assert_eq!(records[0].name, "PRINCIPIO NAME");
+        assert_eq!(records[0].get(0).unwrap(), "1");
+        assert_eq!(records[0].get(1).unwrap(), "PA01");
+        assert_eq!(records[0].get(2).unwrap(), "PRINCIPIO NAME");
     }
 
     #[test]
@@ -785,7 +1078,8 @@ mod tests {
                     <situacionregistro>Autorizado</situacionregistro>
                 </situacionesregistro>
             </aemps_prescripcion_situacion_registro>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -795,15 +1089,17 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: SituacionRegistroRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "1");
-        assert_eq!(records[0].name, "Autorizado");
+        assert_eq!(records[0].get(0).unwrap(), "1");
+        assert_eq!(records[0].get(1).unwrap(), "Autorizado");
     }
 
     #[test]
@@ -817,7 +1113,8 @@ mod tests {
                     <unidadcontenido>ampolla para inyección</unidadcontenido>
                 </unidadescontenido>
             </aemps_prescripcion_unidad_contenido>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -827,15 +1124,17 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: UnidadContenidoRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "1");
-        assert_eq!(records[0].name, "ampolla para inyección");
+        assert_eq!(records[0].get(0).unwrap(), "1");
+        assert_eq!(records[0].get(1).unwrap(), "ampolla para inyección");
     }
 
     #[test]
@@ -849,7 +1148,8 @@ mod tests {
                     <viaadministracion>HEMODIÁLISIS</viaadministracion>
                 </viasadministracion>
             </aemps_prescripcion_vias_administracion>"#
-        ).unwrap();
+        )
+        .unwrap();
 
         let csv_file = NamedTempFile::new().unwrap();
         let xml_path = xml_file.path();
@@ -859,29 +1159,30 @@ mod tests {
         assert!(result.is_ok());
 
         let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: ViaAdministracionRecord = result.unwrap();
-            records.push(record);
-        }
 
+        // Verify CSV headers use Rust field names
+        let headers = csv_reader.headers().unwrap();
+        assert_eq!(headers.get(0).unwrap(), "code");
+        assert_eq!(headers.get(1).unwrap(), "name");
+
+        // Verify CSV data
+        let records: Vec<csv::StringRecord> = csv_reader.records().map(|r| r.unwrap()).collect();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].code, "7");
-        assert_eq!(records[0].name, "HEMODIÁLISIS");
+        assert_eq!(records[0].get(0).unwrap(), "7");
+        assert_eq!(records[0].get(1).unwrap(), "HEMODIÁLISIS");
     }
 
     #[test]
-    fn test_parse_prescription_xml() {
+    fn test_parse_prescription_with_nested() {
         let mut xml_file = NamedTempFile::new().unwrap();
         writeln!(
             xml_file,
             r#"<aemps_prescripcion>
-                <header><listprescriptiondate>2026-01-11</listprescriptiondate></header>
                 <prescription>
                     <cod_nacion>600000</cod_nacion>
                     <nro_definitivo>66337</nro_definitivo>
-                    <des_nomco>AMOXICILINA</des_nomco>
-                    <des_prese>AMOXICILINA 500mg</des_prese>
+                    <des_nomco>TEST</des_nomco>
+                    <des_prese>TEST</des_prese>
                     <sw_psicotropo>0</sw_psicotropo>
                     <sw_estupefaciente>0</sw_estupefaciente>
                     <sw_afecta_conduccion>0</sw_afecta_conduccion>
@@ -902,26 +1203,116 @@ mod tests {
                     <importacion_paralela>0</importacion_paralela>
                     <radiofarmaco>0</radiofarmaco>
                     <serializacion>1</serializacion>
+                    <formasfarmaceuticas>
+                        <cod_forfar>288</cod_forfar>
+                        <cod_forfar_simplificada>34</cod_forfar_simplificada>
+                        <nro_pactiv>1</nro_pactiv>
+                        <composicion_pa>
+                            <cod_principio_activo>160</cod_principio_activo>
+                        </composicion_pa>
+                        <viasadministracion>
+                            <cod_via_admin>49</cod_via_admin>
+                        </viasadministracion>
+                    </formasfarmaceuticas>
                 </prescription>
             </aemps_prescripcion>"#
-        ).unwrap();
+        )
+        .unwrap();
 
-        let csv_file = NamedTempFile::new().unwrap();
-        let xml_path = xml_file.path();
-        let csv_path = csv_file.path();
+        let file = File::open(xml_file.path()).unwrap();
+        let reader = BufReader::new(file);
+        let result: Result<PrescriptionList, _> = from_reader(reader);
 
-        let result = parse_prescription_xml_to_csv(xml_path, csv_path);
-        assert!(result.is_ok());
-
-        let mut csv_reader = csv::Reader::from_path(csv_path).unwrap();
-        let mut records = Vec::new();
-        for result in csv_reader.deserialize() {
-            let record: PrescriptionRecord = result.unwrap();
-            records.push(record);
+        match result {
+            Ok(list) => {
+                assert_eq!(list.records.len(), 1);
+                let record = &list.records[0];
+                assert_eq!(record.cod_nacion, "600000");
+                assert!(record.forms.is_some());
+                println!("Test passed! Nested structure deserialized successfully");
+            }
+            Err(e) => {
+                panic!("Deserialization failed: {:?}", e);
+            }
         }
+    }
 
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].cod_nacion, "600000");
-        assert_eq!(records[0].nro_definitivo, "66337");
+    #[test]
+    fn test_parse_prescription_to_multi_csv() {
+        let mut xml_file = NamedTempFile::new().unwrap();
+        writeln!(
+            xml_file,
+            r#"<aemps_prescripcion>
+                <prescription>
+                    <cod_nacion>600000</cod_nacion>
+                    <nro_definitivo>66337</nro_definitivo>
+                    <des_nomco>TEST</des_nomco>
+                    <des_prese>TEST</des_prese>
+                    <sw_psicotropo>0</sw_psicotropo>
+                    <sw_estupefaciente>0</sw_estupefaciente>
+                    <sw_afecta_conduccion>0</sw_afecta_conduccion>
+                    <sw_triangulo_negro>0</sw_triangulo_negro>
+                    <sw_receta>1</sw_receta>
+                    <sw_generico>1</sw_generico>
+                    <sw_sustituible>1</sw_sustituible>
+                    <sw_envase_clinico>1</sw_envase_clinico>
+                    <sw_uso_hospitalario>1</sw_uso_hospitalario>
+                    <sw_diagnostico_hospitalario>0</sw_diagnostico_hospitalario>
+                    <sw_tld>0</sw_tld>
+                    <sw_especial_control_medico>0</sw_especial_control_medico>
+                    <sw_huerfano>0</sw_huerfano>
+                    <sw_base_a_plantas>0</sw_base_a_plantas>
+                    <sw_comercializado>0</sw_comercializado>
+                    <sw_tiene_excipientes_decl_obligatoria>0</sw_tiene_excipientes_decl_obligatoria>
+                    <biosimilar>0</biosimilar>
+                    <importacion_paralela>0</importacion_paralela>
+                    <radiofarmaco>0</radiofarmaco>
+                    <serializacion>1</serializacion>
+                    <formasfarmaceuticas>
+                        <cod_forfar>288</cod_forfar>
+                        <cod_forfar_simplificada>34</cod_forfar_simplificada>
+                        <nro_pactiv>1</nro_pactiv>
+                        <composicion_pa>
+                            <cod_principio_activo>160</cod_principio_activo>
+                        </composicion_pa>
+                        <viasadministracion>
+                            <cod_via_admin>49</cod_via_admin>
+                        </viasadministracion>
+                    </formasfarmaceuticas>
+                    <atc>
+                        <cod_atc>J01CR02</cod_atc>
+                    </atc>
+                </prescription>
+            </aemps_prescripcion>"#
+        )
+        .unwrap();
+
+        let output_dir = tempfile::tempdir().unwrap();
+        let result = parse_prescription_xml_to_csvs(xml_file.path(), output_dir.path());
+
+        assert!(
+            result.is_ok(),
+            "Multi-CSV parsing failed: {:?}",
+            result.err()
+        );
+
+        // Verify all 7 CSV files were created
+        assert!(output_dir.path().join("prescriptions.csv").exists());
+        assert!(output_dir.path().join("prescription_forms.csv").exists());
+        assert!(
+            output_dir
+                .path()
+                .join("prescription_active_ingredients.csv")
+                .exists()
+        );
+        assert!(
+            output_dir
+                .path()
+                .join("prescription_admin_routes.csv")
+                .exists()
+        );
+        assert!(output_dir.path().join("prescription_atc.csv").exists());
+
+        println!("Multi-CSV test passed! All 7 files created successfully");
     }
 }

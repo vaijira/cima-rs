@@ -34,16 +34,18 @@ pub async fn download_and_extract_nomenclator<P: AsRef<std::path::Path>>(
     let mut archive = ZipArchive::new(reader).context("Failed to open zip archive")?;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i).context("Failed to access file in zip")?;
+        let mut file = archive
+            .by_index(i)
+            .context("Failed to access file in zip")?;
         let outpath = target_dir.join(file.mangled_name());
 
         if file.name().ends_with('/') {
             fs::create_dir_all(&outpath).context("Failed to create subdirectory")?;
         } else {
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    fs::create_dir_all(p).context("Failed to create parent directory")?;
-                }
+            if let Some(p) = outpath.parent()
+                && !p.exists()
+            {
+                fs::create_dir_all(p).context("Failed to create parent directory")?;
             }
             let mut outfile = fs::File::create(&outpath).context("Failed to create output file")?;
             io::copy(&mut file, &mut outfile).context("Failed to copy file content")?;
