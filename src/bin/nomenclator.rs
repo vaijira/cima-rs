@@ -8,7 +8,8 @@ use cima_rs::parser::{
     parse_unidad_contenido_xml_to_csv, parse_via_administracion_xml_to_csv,
 };
 use cima_rs::{
-    CimaClient, MaestraParams, SearchMedicamentosParams, SearchPresentacionesParams, TipoMaestra,
+    CimaClient, MasterDataParams, MasterDataType, SearchMedicationsParams,
+    SearchPresentationsParams,
 };
 use clap::{Parser, Subcommand};
 use futures::stream::{self, StreamExt};
@@ -402,48 +403,48 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             activos,
         } => {
             let med = client
-                .get_medicamento(nregistro.as_deref(), cn.as_deref())
+                .get_medication(nregistro.as_deref(), cn.as_deref())
                 .await?;
 
             println!("=== Medicamento ===");
             println!("Nº Registro: {}", med.nregistro);
-            println!("Nombre: {}", med.nombre);
+            println!("Nombre: {}", med.name);
             println!("Laboratorio: {}", med.labtitular);
             println!("Principios Activos: {}", med.pactivos);
             println!("Condiciones de prescripción: {}", med.cpresc);
 
-            if let Some(comerc) = med.comerc {
+            if let Some(comerc) = med.commercialized {
                 println!("Comercializado: {}", if comerc { "Sí" } else { "No" });
             }
 
-            if let Some(triangulo) = med.triangulo
+            if let Some(triangulo) = med.black_triangle
                 && triangulo
             {
                 println!("⚠️  Triángulo negro (medicamento bajo vigilancia adicional)");
             }
 
-            if let Some(huerfano) = med.huerfano
+            if let Some(huerfano) = med.orphan
                 && huerfano
             {
                 println!("💊 Medicamento huérfano");
             }
 
-            if activos && !med.principios_activos.is_empty() {
+            if activos && !med.active_ingredients.is_empty() {
                 println!("\n=== Principios Activos ===");
-                for pa in &med.principios_activos {
-                    print!("- {}", pa.nombre);
-                    if let (Some(cantidad), Some(unidad)) = (&pa.cantidad, &pa.unidad) {
+                for pa in &med.active_ingredients {
+                    print!("- {}", pa.name);
+                    if let (Some(cantidad), Some(unidad)) = (&pa.amount, &pa.unit) {
                         print!(": {} {}", cantidad, unidad);
                     }
                     println!();
                 }
             }
 
-            if presentaciones && !med.presentaciones.is_empty() {
+            if presentaciones && !med.presentations.is_empty() {
                 println!("\n=== Presentaciones ===");
-                for pres in &med.presentaciones {
-                    println!("- CN: {} - {}", pres.cn, pres.nombre);
-                    if pres.comerc {
+                for pres in &med.presentations {
+                    println!("- CN: {} - {}", pres.cn, pres.name);
+                    if pres.commercialized {
                         println!("  ✓ Comercializada");
                     }
                 }
@@ -452,7 +453,7 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             if !med.docs.is_empty() {
                 println!("\n=== Documentos Disponibles ===");
                 for doc in &med.docs {
-                    let tipo = match doc.tipo {
+                    let tipo = match doc.doc_type {
                         1 => "Ficha Técnica",
                         2 => "Prospecto",
                         3 => "Informe Público Evaluación",
@@ -473,18 +474,18 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             triangulo,
             limit,
         } => {
-            let params = SearchMedicamentosParams {
-                nombre,
-                laboratorio,
-                practiv1: principio_activo,
+            let params = SearchMedicationsParams {
+                name: nombre,
+                laboratory: laboratorio,
+                active_ingredient_1: principio_activo,
                 atc,
-                comerc: if comercializados { Some(1) } else { None },
-                huerfano: if huerfanos { Some(1) } else { None },
-                triangulo: if triangulo { Some(1) } else { None },
+                commercialized: if comercializados { Some(1) } else { None },
+                orphan: if huerfanos { Some(1) } else { None },
+                black_triangle: if triangulo { Some(1) } else { None },
                 ..Default::default()
             };
 
-            let response = client.search_medicamentos(&params).await?;
+            let response = client.search_medications(&params).await?;
 
             tracing::info!(
                 "Found {} total medications (page {} of {}, showing {} results)",
@@ -495,9 +496,9 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             );
 
             for (i, med) in response.results.iter().enumerate().take(limit) {
-                println!("{}. {} ({})", i + 1, med.nombre, med.nregistro);
+                println!("{}. {} ({})", i + 1, med.name, med.nregistro);
                 println!("   Laboratorio: {}", med.labtitular);
-                if let Some(comerc) = med.comerc {
+                if let Some(comerc) = med.commercialized {
                     println!("   Comercializado: {}", if comerc { "Sí" } else { "No" });
                 }
                 println!();
@@ -512,12 +513,15 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             }
         }
         ApiCommands::Presentacion { cn } => {
-            let pres = client.get_presentacion(&cn).await?;
+            let pres = client.get_presentation(&cn).await?;
 
             println!("=== Presentación ===");
             println!("Código Nacional: {}", pres.cn);
-            println!("Nombre: {}", pres.nombre);
-            println!("Comercializada: {}", if pres.comerc { "Sí" } else { "No" });
+            println!("Nombre: {}", pres.name);
+            println!(
+                "Comercializada: {}",
+                if pres.commercialized { "Sí" } else { "No" }
+            );
         }
         ApiCommands::SearchPresentaciones {
             nregistro,
@@ -525,14 +529,14 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             comercializados,
             limit,
         } => {
-            let params = SearchPresentacionesParams {
-                nregistro,
+            let params = SearchPresentationsParams {
+                registration_number: nregistro,
                 vmp,
-                comerc: if comercializados { Some(1) } else { None },
+                commercialized: if comercializados { Some(1) } else { None },
                 ..Default::default()
             };
 
-            let response = client.search_presentaciones(&params).await?;
+            let response = client.search_presentations(&params).await?;
 
             tracing::info!(
                 "Found {} total presentations (page {} of {}, showing {} results)",
@@ -543,8 +547,8 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             );
 
             for (i, p) in response.results.iter().enumerate().take(limit) {
-                println!("{}. CN: {} - {}", i + 1, p.cn, p.nombre);
-                if p.comerc {
+                println!("{}. CN: {} - {}", i + 1, p.cn, p.name);
+                if p.commercialized {
                     println!("   ✓ Comercializada");
                 }
                 println!();
@@ -560,7 +564,7 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
         }
         ApiCommands::SupplyProblems { cn } => {
             if let Some(codigo) = cn {
-                let response = client.get_problemas_suministro(&codigo).await?;
+                let response = client.get_supply_problems(&codigo).await?;
                 tracing::info!(
                     "Found {} supply problems for CN {} (page {} of {})",
                     response.total_rows,
@@ -570,15 +574,15 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
                 );
 
                 for (i, prob) in response.results.iter().enumerate() {
-                    println!("{}. CN: {} - {}", i + 1, prob.cn, prob.nombre);
-                    println!("   Activo: {}", if prob.activo { "Sí" } else { "No" });
-                    if let Some(obs) = &prob.observ {
+                    println!("{}. CN: {} - {}", i + 1, prob.cn, prob.name);
+                    println!("   Activo: {}", if prob.active { "Sí" } else { "No" });
+                    if let Some(obs) = &prob.observations {
                         println!("   Observaciones: {}", obs);
                     }
                     println!();
                 }
             } else {
-                let response = client.get_problemas_suministro_all().await?;
+                let response = client.get_all_supply_problems().await?;
                 tracing::info!(
                     "Found {} total supply problems (page {} of {})",
                     response.total_rows,
@@ -587,9 +591,9 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
                 );
 
                 for (i, prob) in response.results.iter().enumerate() {
-                    println!("{}. CN: {} - {}", i + 1, prob.cn, prob.nombre);
-                    println!("   Activo: {}", if prob.activo { "Sí" } else { "No" });
-                    if let Some(obs) = &prob.observ {
+                    println!("{}. CN: {} - {}", i + 1, prob.cn, prob.name);
+                    println!("   Activo: {}", if prob.active { "Sí" } else { "No" });
+                    if let Some(obs) = &prob.observations {
                         println!("   Observaciones: {}", obs);
                     }
                     println!();
@@ -597,12 +601,12 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             }
         }
         ApiCommands::SafetyNotes { nregistro } => {
-            let notas = client.get_notas_seguridad(&nregistro).await?;
+            let notas = client.get_safety_notes(&nregistro).await?;
 
             println!("Notas de Seguridad: {}\n", notas.len());
 
             for (i, nota) in notas.iter().enumerate() {
-                println!("{}. {} - {}", i + 1, nota.num, nota.asunto);
+                println!("{}. {} - {}", i + 1, nota.num, nota.subject);
                 println!("   URL: {}", nota.url);
                 println!();
             }
@@ -615,7 +619,7 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
                 Some(nregs.as_slice())
             };
 
-            let response = client.get_registro_cambios(&desde, nregs_opt).await?;
+            let response = client.get_change_log(&desde, nregs_opt).await?;
 
             tracing::info!(
                 "Found {} total changes since {} (page {} of {})",
@@ -627,15 +631,15 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
 
             for (i, cambio) in response.results.iter().enumerate() {
                 println!("{}. Nº Registro: {}", i + 1, cambio.nregistro);
-                let tipo = match cambio.tipo_cambio {
+                let tipo = match cambio.change_type {
                     1 => "Nuevo",
                     2 => "Baja",
                     3 => "Modificado",
                     _ => "Desconocido",
                 };
                 println!("   Tipo: {}", tipo);
-                if !cambio.cambios.is_empty() {
-                    println!("   Cambios: {}", cambio.cambios.join(", "));
+                if !cambio.changes.is_empty() {
+                    println!("   Cambios: {}", cambio.changes.join(", "));
                 }
                 println!();
             }
@@ -662,23 +666,23 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             }
 
             let tipo_maestra = match tipo.as_str() {
-                "pa" => TipoMaestra::PrincipiosActivos,
-                "ff" => TipoMaestra::FormasFarmaceuticas,
-                "va" => TipoMaestra::ViasAdministracion,
-                "lab" => TipoMaestra::Laboratorios,
-                "atc" => TipoMaestra::CodigosATC,
+                "pa" => MasterDataType::ActiveIngredients,
+                "ff" => MasterDataType::PharmaceuticalForms,
+                "va" => MasterDataType::AdministrationRoutes,
+                "lab" => MasterDataType::Laboratories,
+                "atc" => MasterDataType::AtcCodes,
                 _ => anyhow::bail!(
                     "Tipo de maestra desconocido: {}. Use: pa, ff, va, lab, atc",
                     tipo
                 ),
             };
 
-            let params = MaestraParams {
-                nombre,
+            let params = MasterDataParams {
+                name: nombre,
                 ..Default::default()
             };
 
-            let response = client.get_maestra(tipo_maestra, &params).await?;
+            let response = client.get_master_data(tipo_maestra, &params).await?;
 
             tracing::info!(
                 "Found {} total items (page {} of {})",
@@ -688,8 +692,8 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
             );
 
             for (i, item) in response.results.iter().enumerate().take(limit) {
-                print!("{}. {}", i + 1, item.nombre);
-                if let Some(codigo) = &item.codigo {
+                print!("{}. {}", i + 1, item.name);
+                if let Some(codigo) = &item.code {
                     print!(" ({})", codigo);
                 } else if let Some(id) = item.id {
                     print!(" (ID: {})", id);

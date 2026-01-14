@@ -60,6 +60,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore] // Requires network access to external AEMPS server
     async fn test_download_and_extract() {
         let temp_dir = tempfile::tempdir().unwrap();
         let target_dir = temp_dir.path().join("nomenclator");

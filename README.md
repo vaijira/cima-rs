@@ -84,22 +84,22 @@ Available master data types (`--tipo`):
 ### Rust Library API
 
 ```rust
-use cima_rs::{CimaClient, SearchMedicamentosParams};
+use cima_rs::{CimaClient, SearchMedicationsParams};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let client = CimaClient::new()?;
     
     // Get specific medication by registration number
-    let med = client.get_medicamento(Some("51347"), None).await?;
-    println!("Medication: {}", med.nombre);
+    let med = client.get_medication(Some("51347"), None).await?;
+    println!("Medication: {}", med.name);
     
     // Search medications
-    let params = SearchMedicamentosParams {
-        nombre: Some("Paracetamol".to_string()),
+    let params = SearchMedicationsParams {
+        name: Some("Paracetamol".to_string()),
         ..Default::default()
     };
-    let results = client.search_medicamentos(&params).await?;
+    let results = client.search_medications(&params).await?;
     
     Ok(())
 }
@@ -125,20 +125,20 @@ This generates multiple normalized CSV files:
 
 All endpoints return structured Rust types with serde serialization support:
 
-- `get_medicamento()` - Get medication details
-- `search_medicamentos()` - Search medications with filters
-- `buscar_en_ficha_tecnica()` - Search in technical sheets
-- `get_presentacion()` - Get presentation details
-- `search_presentaciones()` - Search presentations
-- `get_problemas_suministro_all()` - Get all supply problems
-- `get_problemas_suministro()` - Get supply problems by CN
-- `search_vmpp()` - Search clinical descriptions
-- `get_notas_seguridad()` - Get safety notes
-- `get_materiales_informativos()` - Get informative materials
-- `get_doc_secciones()` - Get document sections
-- `get_doc_contenido()` - Get document content
-- `get_maestra()` - Get master data catalogs
-- `get_registro_cambios()` - Get change logs
+- `get_medication()` - Get medication details
+- `search_medications()` - Search medications with filters
+- `search_in_technical_sheet()` - Search in technical sheets
+- `get_presentation()` - Get presentation details
+- `search_presentations()` - Search presentations
+- `get_all_supply_problems()` - Get all supply problems
+- `get_supply_problems()` - Get supply problems by CN
+- `search_clinical_descriptions()` - Search clinical descriptions
+- `get_safety_notes()` - Get safety notes
+- `get_informative_materials()` - Get informative materials
+- `get_document_sections()` - Get document sections
+- `get_document_content()` - Get document content
+- `get_master_data()` - Get master data catalogs
+- `get_change_log()` - Get change logs
 
 ## Requirements
 

@@ -7,7 +7,7 @@ use tracing::instrument;
 const BASE_URL: &str = "https://cima.aemps.es/cima/rest";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Cliente para interactuar con la API REST de CIMA
+/// Client for interacting with the CIMA REST API
 #[derive(Clone, Debug)]
 pub struct CimaClient {
     base_url: String,
@@ -15,12 +15,12 @@ pub struct CimaClient {
 }
 
 impl CimaClient {
-    /// Crea un nuevo cliente CIMA con configuración por defecto
+    /// Create a new CIMA client with default configuration
     pub fn new() -> Result<Self> {
         Self::with_base_url(BASE_URL)
     }
 
-    /// Crea un cliente con una URL base personalizada (útil para testing)
+    /// Create a client with a custom base URL (useful for testing)
     pub fn with_base_url(base_url: &str) -> Result<Self> {
         tracing::debug!(base_url, "Creating CIMA client");
 

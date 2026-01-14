@@ -13,432 +13,466 @@ pub struct PaginatedResponse<T> {
     pub results: Vec<T>,
 }
 
-/// Estado de autorización de un medicamento o presentación
+/// Authorization status of a medication or presentation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Estado {
-    /// Fecha de autorización (Unix Epoch GMT+2:00)
+pub struct AuthorizationStatus {
+    /// Authorization date (Unix Epoch GMT+2:00)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aut: Option<i64>,
-    /// Fecha de suspensión (Unix Epoch GMT+2:00)
+    /// Suspension date (Unix Epoch GMT+2:00)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub susp: Option<i64>,
-    /// Fecha de revocación (Unix Epoch GMT+2:00)
+    /// Revocation date (Unix Epoch GMT+2:00)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rev: Option<i64>,
 }
 
-/// Item genérico usado en maestras
+/// Generic item used in master data catalogs
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Item {
-    /// Identificador numérico
+pub struct MasterItem {
+    /// Numeric identifier
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
-    /// Identificador alfanumérico
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub codigo: Option<String>,
-    /// Nombre del elemento
-    pub nombre: String,
+    /// Alphanumeric identifier
+    #[serde(rename = "codigo", skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Name
+    #[serde(rename = "nombre")]
+    pub name: String,
 }
 
-/// Problema de suministro de una presentación
+/// Supply problem for a presentation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProblemaSuministro {
-    /// Código nacional
+pub struct SupplyProblem {
+    /// National code
     pub cn: String,
-    /// Nombre de la presentación
-    pub nombre: String,
-    /// Fecha de inicio (Unix Epoch GMT+2:00)
+    /// Presentation name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Start date (Unix Epoch GMT+2:00)
     pub fini: i64,
-    /// Fecha prevista de fin o fecha de solución (Unix Epoch GMT+2:00)
+    /// Expected end date or resolution date (Unix Epoch GMT+2:00)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ffin: Option<i64>,
-    /// Observaciones
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observ: Option<String>,
-    /// Indica si sigue activo
-    pub activo: bool,
+    /// Observations
+    #[serde(rename = "observ", skip_serializing_if = "Option::is_none")]
+    pub observations: Option<String>,
+    /// Indicates if still active
+    #[serde(rename = "activo")]
+    pub active: bool,
 }
 
-/// Sección de un documento
+/// Document section
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Seccion {
-    /// Número de sección (hasta 3 niveles: "N.N.N")
-    pub seccion: String,
-    /// Título de la sección
-    pub titulo: String,
-    /// Orden de la sección
-    pub orden: i32,
-    /// Contenido en formato HTML
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contenido: Option<String>,
+pub struct Section {
+    /// Section number (up to 3 levels: "N.N.N")
+    #[serde(rename = "seccion")]
+    pub section: String,
+    /// Section title
+    #[serde(rename = "titulo")]
+    pub title: String,
+    /// Section order
+    #[serde(rename = "orden")]
+    pub order: i32,
+    /// Content in HTML format
+    #[serde(rename = "contenido", skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
 }
 
-/// Tipo de documento
+/// Document type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
-pub enum TipoDocumento {
-    /// Ficha Técnica
-    FichaTecnica = 1,
-    /// Prospecto
-    Prospecto = 2,
-    /// Informe Público Evaluación
-    InformePublico = 3,
-    /// Plan de gestión de riesgos
-    PlanGestionRiesgos = 4,
+pub enum DocumentType {
+    /// Technical data sheet
+    #[serde(rename = "FichaTecnica")]
+    TechnicalSheet = 1,
+    /// Package leaflet
+    #[serde(rename = "Prospecto")]
+    PackageLeaflet = 2,
+    /// Public evaluation report
+    #[serde(rename = "InformePublico")]
+    PublicReport = 3,
+    /// Risk management plan
+    #[serde(rename = "PlanGestionRiesgos")]
+    RiskManagementPlan = 4,
 }
 
-/// Documento asociado a un medicamento
+/// Document associated with a medication
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Documento {
-    /// Tipo de documento
-    pub tipo: u8,
-    /// URL para acceder al documento
+pub struct Document {
+    /// Document type
+    #[serde(rename = "tipo")]
+    pub doc_type: u8,
+    /// URL to access the document
     pub url: String,
-    /// Indica si está disponible en HTML por secciones
-    pub secc: bool,
-    /// URL en formato HTML (sólo si secc = true)
+    /// Indicates if available in HTML sections
+    #[serde(rename = "secc")]
+    pub has_sections: bool,
+    /// URL in HTML format (only if has_sections = true)
     #[serde(rename = "urlHtml", skip_serializing_if = "Option::is_none")]
     pub url_html: Option<String>,
-    /// Fecha de modificación (Unix Epoch GMT+2:00) - optional as some documents may not have a date
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fecha: Option<i64>,
+    /// Modification date (Unix Epoch GMT+2:00)
+    #[serde(rename = "fecha", skip_serializing_if = "Option::is_none")]
+    pub date: Option<i64>,
 }
 
-/// Nota de seguridad o informativa
+/// Safety or informative note
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Nota {
-    /// Tipo de nota (1: Nota Seguridad)
-    pub tipo: u8,
-    /// Número de la nota
+pub struct SafetyNote {
+    /// Note type (1: Safety Note)
+    #[serde(rename = "tipo")]
+    pub note_type: u8,
+    /// Note number
     pub num: String,
-    /// Referencia asociada
+    /// Associated reference
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#ref: Option<String>,
-    /// Asunto
-    pub asunto: String,
-    /// Fecha de publicación (Unix Epoch GMT+2:00)
-    pub fecha: i64,
-    /// URL para acceder a la nota
+    /// Subject
+    #[serde(rename = "asunto")]
+    pub subject: String,
+    /// Publication date (Unix Epoch GMT+2:00)
+    #[serde(rename = "fecha")]
+    pub date: i64,
+    /// URL to access the note
     pub url: String,
 }
 
-/// Documento de material informativo
+/// Informative material document
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentoMaterial {
-    /// Título del documento
-    pub nombre: String,
-    /// URL para acceder
+pub struct MaterialDocument {
+    /// Document title
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Access URL
     pub url: String,
-    /// Fecha de actualización (Unix Epoch GMT+2:00)
-    pub fecha: i64,
+    /// Update date (Unix Epoch GMT+2:00)
+    #[serde(rename = "fecha")]
+    pub date: i64,
 }
 
-/// Material informativo sobre seguridad
+/// Safety informative material
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Material {
-    /// Lista de documentos para profesionales sanitarios
+pub struct SafetyMaterial {
+    /// List of documents for healthcare professionals
     #[serde(rename = "listaDocsProfesional", default)]
-    pub lista_docs_profesional: Vec<DocumentoMaterial>,
+    pub professional_docs: Vec<MaterialDocument>,
 }
 
-/// Descripción clínica (VMP/VMPP)
+/// Clinical description (VMP/VMPP)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DescripcionClinica {
-    /// Código de VMP
+pub struct ClinicalDescription {
+    /// VMP code
     pub vmp: String,
-    /// Nombre del VMP
+    /// VMP name
     #[serde(rename = "vmpDesc")]
     pub vmp_desc: String,
-    /// Código de VMPP
+    /// VMPP code
     pub vmpp: String,
-    /// Nombre del VMPP
+    /// VMPP name
     #[serde(rename = "vmppDesc")]
     pub vmpp_desc: String,
-    /// Número de presentaciones comercializadas
+    /// Number of commercialized presentations
     #[serde(rename = "presComerc")]
-    pub pres_comerc: i32,
+    pub commercialized_presentations: i32,
 }
 
-/// Código ATC
+/// ATC code
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Atc {
-    /// Código ATC
-    pub codigo: String,
-    /// Nombre descriptivo
-    pub nombre: String,
-    /// Nivel del código ATC
-    pub nivel: i32,
+pub struct AtcCode {
+    /// ATC code
+    #[serde(rename = "codigo")]
+    pub code: String,
+    /// Descriptive name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// ATC code level
+    #[serde(rename = "nivel")]
+    pub level: i32,
 }
 
-/// Principio activo
+/// Active ingredient
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrincipioActivo {
-    /// ID del principio activo
+pub struct ActiveIngredient {
+    /// Active ingredient ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
-    /// Código identificativo
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub codigo: Option<String>,
-    /// Nombre
-    pub nombre: String,
-    /// Cantidad
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cantidad: Option<String>,
-    /// Unidad
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unidad: Option<String>,
-    /// Orden en la lista
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub orden: Option<i32>,
+    /// Identification code
+    #[serde(rename = "codigo", skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Amount
+    #[serde(rename = "cantidad", skip_serializing_if = "Option::is_none")]
+    pub amount: Option<String>,
+    /// Unit
+    #[serde(rename = "unidad", skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// Display order
+    #[serde(rename = "orden", skip_serializing_if = "Option::is_none")]
+    pub order: Option<i32>,
 }
 
-/// Excipiente
+/// Excipient
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Excipiente {
-    /// ID del excipiente
+pub struct Excipient {
+    /// Excipient ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
-    /// Nombre
-    pub nombre: String,
-    /// Cantidad
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cantidad: Option<String>,
-    /// Unidad
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unidad: Option<String>,
-    /// Orden en la lista
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub orden: Option<i32>,
+    /// Name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Amount
+    #[serde(rename = "cantidad", skip_serializing_if = "Option::is_none")]
+    pub amount: Option<String>,
+    /// Unit
+    #[serde(rename = "unidad", skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// Display order
+    #[serde(rename = "orden", skip_serializing_if = "Option::is_none")]
+    pub order: Option<i32>,
 }
 
-/// Foto de un medicamento
+/// Medication photo
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Foto {
-    /// Tipo: "materialas" (material acondicionamiento) o "formafarmac" (forma farmacéutica)
-    pub tipo: String,
-    /// URL de la imagen
+pub struct Photo {
+    /// Type: "materialas" (packaging material) or "formafarmac" (pharmaceutical form)
+    #[serde(rename = "tipo")]
+    pub photo_type: String,
+    /// Image URL
     pub url: String,
-    /// Fecha de actualización (Unix Epoch GMT+2:00) - optional as some photos may not have a date
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fecha: Option<i64>,
+    /// Update date (Unix Epoch GMT+2:00)
+    #[serde(rename = "fecha", skip_serializing_if = "Option::is_none")]
+    pub date: Option<i64>,
 }
 
-/// Presentación de un medicamento (vista simplificada para listados)
+/// Presentation of a medication (simplified view for listings)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PresentacionList {
-    /// Código nacional de la presentación
+pub struct PresentationSummary {
+    /// National code
     pub cn: String,
-    /// Nombre de la presentación
-    pub nombre: String,
-    /// Estado de registro
-    pub estado: Estado,
-    /// Indica si está comercializada
-    pub comerc: bool,
-    /// Indica si tiene problemas de suministro
+    /// Presentation name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Registration status
+    #[serde(rename = "estado")]
+    pub status: AuthorizationStatus,
+    /// Indicates if commercialized
+    #[serde(rename = "comerc")]
+    pub commercialized: bool,
+    /// Indicates if has supply problems
     #[serde(skip_serializing_if = "Option::is_none")]
     pub psum: Option<bool>,
 }
 
-/// Presentación completa
+/// Complete presentation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Presentacion {
-    /// Código nacional
+pub struct Presentation {
+    /// National code
     pub cn: String,
-    /// Nombre
-    pub nombre: String,
-    /// Estado
-    pub estado: Estado,
-    /// Indica si está comercializada
-    pub comerc: bool,
-    /// Indica si tiene problemas de suministro
+    /// Name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Status
+    #[serde(rename = "estado")]
+    pub status: AuthorizationStatus,
+    /// Indicates if commercialized
+    #[serde(rename = "comerc")]
+    pub commercialized: bool,
+    /// Indicates if has supply problems
     #[serde(skip_serializing_if = "Option::is_none")]
     pub psum: Option<bool>,
 }
 
-/// Medicamento (vista simplificada para listados)
+/// Medication (simplified view for listings)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MedicamentoList {
-    /// Nº de registro
+pub struct MedicationSummary {
+    /// Registration number
     pub nregistro: String,
-    /// Nombre del medicamento
-    pub nombre: String,
-    /// Laboratorio titular
+    /// Medication name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Holder laboratory
     pub labtitular: String,
-    /// Estado de registro
-    pub estado: Estado,
-    /// Condiciones de prescripción
+    /// Registration status
+    #[serde(rename = "estado")]
+    pub status: AuthorizationStatus,
+    /// Prescription conditions
     pub cpresc: String,
-    /// Indica si tiene alguna presentación comercializada
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comerc: Option<bool>,
-    /// Indica si necesita receta médica
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receta: Option<bool>,
-    /// Indica si afecta a la conducción
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub conduc: Option<bool>,
-    /// Indica si tiene triángulo negro
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub triangulo: Option<bool>,
-    /// Indica si es huérfano
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub huerfano: Option<bool>,
-    /// Indica si es biosimilar
+    /// Indicates if has any commercialized presentation
+    #[serde(rename = "comerc", skip_serializing_if = "Option::is_none")]
+    pub commercialized: Option<bool>,
+    /// Indicates if requires prescription
+    #[serde(rename = "receta", skip_serializing_if = "Option::is_none")]
+    pub prescription_required: Option<bool>,
+    /// Indicates if affects driving
+    #[serde(rename = "conduc", skip_serializing_if = "Option::is_none")]
+    pub affects_driving: Option<bool>,
+    /// Indicates if has black triangle
+    #[serde(rename = "triangulo", skip_serializing_if = "Option::is_none")]
+    pub black_triangle: Option<bool>,
+    /// Indicates if orphan drug
+    #[serde(rename = "huerfano", skip_serializing_if = "Option::is_none")]
+    pub orphan: Option<bool>,
+    /// Indicates if biosimilar
     #[serde(skip_serializing_if = "Option::is_none")]
     pub biosimilar: Option<bool>,
-    /// Tipo de no sustituible
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nosustituible: Option<Item>,
-    /// Indica si tiene problemas de suministro
+    /// Non-substitutable type
+    #[serde(rename = "nosustituible", skip_serializing_if = "Option::is_none")]
+    pub non_substitutable: Option<MasterItem>,
+    /// Indicates if has supply problems
     #[serde(skip_serializing_if = "Option::is_none")]
     pub psum: Option<bool>,
-    /// Indica si registrado por EMA
+    /// Indicates if registered by EMA
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ema: Option<bool>,
-    /// Indica si tiene notas
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notas: Option<bool>,
-    /// Indica si tiene materiales informativos
+    /// Indicates if has notes
+    #[serde(rename = "notas", skip_serializing_if = "Option::is_none")]
+    pub has_notes: Option<bool>,
+    /// Indicates if has informative materials
     #[serde(rename = "materialesInf", skip_serializing_if = "Option::is_none")]
-    pub materiales_inf: Option<bool>,
-    /// Documentos asociados
+    pub has_materials: Option<bool>,
+    /// Associated documents
     #[serde(default)]
-    pub docs: Vec<Documento>,
-    /// Fotos asociadas
-    #[serde(default)]
-    pub fotos: Vec<Foto>,
-    /// Vías de administración
+    pub docs: Vec<Document>,
+    /// Associated photos
+    #[serde(rename = "fotos", default)]
+    pub photos: Vec<Photo>,
+    /// Administration routes
     #[serde(rename = "viasAdministracion", default)]
-    pub vias_administracion: Vec<Item>,
-    /// Forma farmacéutica
+    pub administration_routes: Vec<MasterItem>,
+    /// Pharmaceutical form
     #[serde(rename = "formaFarmaceutica", skip_serializing_if = "Option::is_none")]
-    pub forma_farmaceutica: Option<Item>,
-    /// Forma farmacéutica simplificada
+    pub pharmaceutical_form: Option<MasterItem>,
+    /// Simplified pharmaceutical form
     #[serde(
         rename = "formaFarmaceuticaSimplificada",
         skip_serializing_if = "Option::is_none"
     )]
-    pub forma_farmaceutica_simplificada: Option<Item>,
-    /// Dosis de principios activos
+    pub simplified_pharmaceutical_form: Option<MasterItem>,
+    /// Active ingredient dose
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dosis: Option<String>,
 }
 
-/// Medicamento completo con todos los detalles
+/// Complete medication with all details
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Medicamento {
-    /// Nº de registro
+pub struct Medication {
+    /// Registration number
     pub nregistro: String,
-    /// Nombre del medicamento
-    pub nombre: String,
-    /// Lista de principios activos separados por comas
+    /// Medication name
+    #[serde(rename = "nombre")]
+    pub name: String,
+    /// Comma-separated list of active ingredients
     pub pactivos: String,
-    /// Laboratorio titular
+    /// Holder laboratory
     pub labtitular: String,
-    /// Estado de registro
-    pub estado: Estado,
-    /// Condiciones de prescripción
+    /// Registration status
+    #[serde(rename = "estado")]
+    pub status: AuthorizationStatus,
+    /// Prescription conditions
     pub cpresc: String,
-    /// Indica si tiene alguna presentación comercializada
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comerc: Option<bool>,
-    /// Indica si necesita receta médica
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receta: Option<bool>,
-    /// Indica si afecta a la conducción
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub conduc: Option<bool>,
-    /// Indica si tiene triángulo negro
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub triangulo: Option<bool>,
-    /// Indica si es huérfano
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub huerfano: Option<bool>,
-    /// Indica si es biosimilar
+    /// Indicates if has any commercialized presentation
+    #[serde(rename = "comerc", skip_serializing_if = "Option::is_none")]
+    pub commercialized: Option<bool>,
+    /// Indicates if requires prescription
+    #[serde(rename = "receta", skip_serializing_if = "Option::is_none")]
+    pub prescription_required: Option<bool>,
+    /// Indicates if affects driving
+    #[serde(rename = "conduc", skip_serializing_if = "Option::is_none")]
+    pub affects_driving: Option<bool>,
+    /// Indicates if has black triangle
+    #[serde(rename = "triangulo", skip_serializing_if = "Option::is_none")]
+    pub black_triangle: Option<bool>,
+    /// Indicates if orphan drug
+    #[serde(rename = "huerfano", skip_serializing_if = "Option::is_none")]
+    pub orphan: Option<bool>,
+    /// Indicates if biosimilar
     #[serde(skip_serializing_if = "Option::is_none")]
     pub biosimilar: Option<bool>,
-    /// Indica si registrado por EMA
+    /// Indicates if registered by EMA
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ema: Option<bool>,
-    /// Indica si tiene problemas de suministro
+    /// Indicates if has supply problems
     #[serde(skip_serializing_if = "Option::is_none")]
     pub psum: Option<bool>,
-    /// Documentos asociados
+    /// Associated documents
     #[serde(default)]
-    pub docs: Vec<Documento>,
-    /// Fotos asociadas
-    #[serde(default)]
-    pub fotos: Vec<Foto>,
-    /// Indica si tiene notas
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notas: Option<bool>,
-    /// Indica si tiene materiales informativos
+    pub docs: Vec<Document>,
+    /// Associated photos
+    #[serde(rename = "fotos", default)]
+    pub photos: Vec<Photo>,
+    /// Indicates if has notes
+    #[serde(rename = "notas", skip_serializing_if = "Option::is_none")]
+    pub has_notes: Option<bool>,
+    /// Indicates if has informative materials
     #[serde(rename = "materialesInf", skip_serializing_if = "Option::is_none")]
-    pub materiales_inf: Option<bool>,
-    /// Códigos ATC
+    pub has_materials: Option<bool>,
+    /// ATC codes
     #[serde(default)]
-    pub atcs: Vec<Atc>,
-    /// Principios activos
+    pub atcs: Vec<AtcCode>,
+    /// Active ingredients
     #[serde(rename = "principiosActivos", default)]
-    pub principios_activos: Vec<PrincipioActivo>,
-    /// Excipientes
-    #[serde(default)]
-    pub excipientes: Vec<Excipiente>,
-    /// Vías de administración
+    pub active_ingredients: Vec<ActiveIngredient>,
+    /// Excipients
+    #[serde(rename = "excipientes", default)]
+    pub excipients: Vec<Excipient>,
+    /// Administration routes
     #[serde(rename = "viasAdministracion", default)]
-    pub vias_administracion: Vec<Item>,
-    /// Tipo de no sustituible
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nosustituible: Option<Item>,
-    /// Presentaciones
-    #[serde(default)]
-    pub presentaciones: Vec<PresentacionList>,
-    /// Forma farmacéutica
+    pub administration_routes: Vec<MasterItem>,
+    /// Non-substitutable type
+    #[serde(rename = "nosustituible", skip_serializing_if = "Option::is_none")]
+    pub non_substitutable: Option<MasterItem>,
+    /// Presentations
+    #[serde(rename = "presentaciones", default)]
+    pub presentations: Vec<PresentationSummary>,
+    /// Pharmaceutical form
     #[serde(rename = "formaFarmaceutica", skip_serializing_if = "Option::is_none")]
-    pub forma_farmaceutica: Option<Item>,
-    /// Forma farmacéutica simplificada
+    pub pharmaceutical_form: Option<MasterItem>,
+    /// Simplified pharmaceutical form
     #[serde(
         rename = "formaFarmaceuticaSimplificada",
         skip_serializing_if = "Option::is_none"
     )]
-    pub forma_farmaceutica_simplificada: Option<Item>,
-    /// Dosis de principios activos
+    pub simplified_pharmaceutical_form: Option<MasterItem>,
+    /// Active ingredient dose
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dosis: Option<String>,
 }
 
-/// Registro de cambios
+/// Change log record
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegistroCambios {
-    /// Nº de registro del medicamento
+pub struct ChangeRecord {
+    /// Medication registration number
     pub nregistro: String,
-    /// Fecha del cambio (Unix Epoch GMT+2:00)
-    pub fecha: i64,
-    /// Tipo de cambio: 1=Nuevo, 2=Baja, 3=Modificado
+    /// Change date (Unix Epoch GMT+2:00)
+    #[serde(rename = "fecha")]
+    pub date: i64,
+    /// Change type: 1=New, 2=Deleted, 3=Modified
     #[serde(rename = "tipoCambio")]
-    pub tipo_cambio: u8,
-    /// Lista de cambios: "estado", "comerc", "prosp", "ft", "psum", "notasSeguridad", "matinf", "otros"
-    #[serde(default)]
-    pub cambios: Vec<String>,
+    pub change_type: u8,
+    /// List of changes: "estado", "comerc", "prosp", "ft", "psum", "notasSeguridad", "matinf", "otros"
+    #[serde(rename = "cambios", default)]
+    pub changes: Vec<String>,
 }
 
-/// Tipo de maestra
+/// Master data type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum TipoMaestra {
-    PrincipiosActivos = 1,
-    FormasFarmaceuticas = 3,
-    ViasAdministracion = 4,
-    Laboratorios = 6,
-    CodigosATC = 7,
-    PrincipiosActivosSnomed = 11,
-    FormasFarmaceuticasSimplificadasSnomed = 13,
-    ViasAdministracionSimplificadasSnomed = 14,
-    Medicamentos = 15,
-    MedicamentosComercializadosSnomed = 16,
+pub enum MasterDataType {
+    ActiveIngredients = 1,
+    PharmaceuticalForms = 3,
+    AdministrationRoutes = 4,
+    Laboratories = 6,
+    AtcCodes = 7,
+    ActiveIngredientsSNOMED = 11,
+    SimplifiedPharmaceuticalFormsSNOMED = 13,
+    AdministrationRoutesSNOMED = 14,
+    Medications = 15,
+    CommercializedMedicationsSNOMED = 16,
 }
 
-impl TipoMaestra {
+impl MasterDataType {
     pub fn as_u8(self) -> u8 {
         self as u8
     }

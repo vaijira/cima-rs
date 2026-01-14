@@ -1,32 +1,32 @@
 use anyhow::Result;
-use cima_rs::{CimaClient, SearchMedicamentosParams};
+use cima_rs::{CimaClient, SearchMedicationsParams};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(name = "query_medicamento")]
 #[command(about = "Query CIMA API for medication information", long_about = None)]
 struct Args {
-    /// Número de registro del medicamento
+    /// Medication registration number
     #[arg(short, long)]
     nregistro: Option<String>,
 
-    /// Código nacional de la presentación
+    /// National code of the presentation
     #[arg(short, long)]
     cn: Option<String>,
 
-    /// Nombre del medicamento para búsqueda
+    /// Medication name for search
     #[arg(long)]
     nombre: Option<String>,
 
-    /// Nombre del laboratorio para búsqueda
+    /// Laboratory name for search
     #[arg(long)]
     laboratorio: Option<String>,
 
-    /// Mostrar presentaciones del medicamento
+    /// Show medication presentations
     #[arg(short, long)]
     presentaciones: bool,
 
-    /// Mostrar principios activos
+    /// Show active ingredients
     #[arg(short = 'a', long)]
     activos: bool,
 }
@@ -37,51 +37,51 @@ async fn main() -> Result<()> {
 
     let client = CimaClient::new()?;
 
-    // Si se proporciona nregistro o cn, obtener medicamento específico
+    // If registration number or national code is provided, get specific medication
     if args.nregistro.is_some() || args.cn.is_some() {
         let medicamento = client
-            .get_medicamento(args.nregistro.as_deref(), args.cn.as_deref())
+            .get_medication(args.nregistro.as_deref(), args.cn.as_deref())
             .await?;
 
         println!("=== Medicamento ===");
         println!("Nº Registro: {}", medicamento.nregistro);
-        println!("Nombre: {}", medicamento.nombre);
+        println!("Nombre: {}", medicamento.name);
         println!("Laboratorio: {}", medicamento.labtitular);
         println!("Principios Activos: {}", medicamento.pactivos);
         println!("Condiciones de prescripción: {}", medicamento.cpresc);
 
-        if let Some(comerc) = medicamento.comerc {
+        if let Some(comerc) = medicamento.commercialized {
             println!("Comercializado: {}", if comerc { "Sí" } else { "No" });
         }
 
-        if let Some(triangulo) = medicamento.triangulo {
+        if let Some(triangulo) = medicamento.black_triangle {
             if triangulo {
                 println!("⚠️  Triángulo negro (medicamento bajo vigilancia adicional)");
             }
         }
 
-        if let Some(huerfano) = medicamento.huerfano {
+        if let Some(huerfano) = medicamento.orphan {
             if huerfano {
                 println!("💊 Medicamento huérfano");
             }
         }
 
-        if args.activos && !medicamento.principios_activos.is_empty() {
+        if args.activos && !medicamento.active_ingredients.is_empty() {
             println!("\n=== Principios Activos ===");
-            for pa in &medicamento.principios_activos {
-                print!("- {}", pa.nombre);
-                if let (Some(cantidad), Some(unidad)) = (&pa.cantidad, &pa.unidad) {
+            for pa in &medicamento.active_ingredients {
+                print!("- {}", pa.name);
+                if let (Some(cantidad), Some(unidad)) = (&pa.amount, &pa.unit) {
                     print!(": {} {}", cantidad, unidad);
                 }
                 println!();
             }
         }
 
-        if args.presentaciones && !medicamento.presentaciones.is_empty() {
+        if args.presentaciones && !medicamento.presentations.is_empty() {
             println!("\n=== Presentaciones ===");
-            for pres in &medicamento.presentaciones {
-                println!("- CN: {} - {}", pres.cn, pres.nombre);
-                if pres.comerc {
+            for pres in &medicamento.presentations {
+                println!("- CN: {} - {}", pres.cn, pres.name);
+                if pres.commercialized {
                     println!("  ✓ Comercializada");
                 }
             }
@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
         if !medicamento.docs.is_empty() {
             println!("\n=== Documentos Disponibles ===");
             for doc in &medicamento.docs {
-                let tipo = match doc.tipo {
+                let tipo = match doc.doc_type {
                     1 => "Ficha Técnica",
                     2 => "Prospecto",
                     3 => "Informe Público Evaluación",
@@ -101,17 +101,17 @@ async fn main() -> Result<()> {
             }
         }
     }
-    // Si se proporciona nombre o laboratorio, buscar medicamentos
+    // If name or laboratory is provided, search medications
     else if args.nombre.is_some() || args.laboratorio.is_some() {
         println!("Buscando medicamentos...\n");
 
-        let params = SearchMedicamentosParams {
-            nombre: args.nombre.clone(),
-            laboratorio: args.laboratorio.clone(),
+        let params = SearchMedicationsParams {
+            name: args.nombre.clone(),
+            laboratory: args.laboratorio.clone(),
             ..Default::default()
         };
 
-        let response = client.search_medicamentos(&params).await?;
+        let response = client.search_medications(&params).await?;
 
         println!(
             "Encontrados {} medicamentos (mostrando primeros 10):\n",
@@ -119,9 +119,9 @@ async fn main() -> Result<()> {
         );
 
         for (i, med) in response.results.iter().enumerate().take(10) {
-            println!("{}. {} ({})", i + 1, med.nombre, med.nregistro);
+            println!("{}. {} ({})", i + 1, med.name, med.nregistro);
             println!("   Laboratorio: {}", med.labtitular);
-            if let Some(comerc) = med.comerc {
+            if let Some(comerc) = med.commercialized {
                 println!("   Comercializado: {}", if comerc { "Sí" } else { "No" });
             }
             println!();
