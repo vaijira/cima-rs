@@ -243,8 +243,8 @@ struct AdministrationRouteList {
 /// Active ingredient composition for a prescription
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActiveIngredient {
-    #[serde(rename(deserialize = "cod_principio_activo"))]
-    pub active_ingredient_code: String,
+    #[serde(rename(deserialize = "cod_principio_activo"), default)]
+    pub active_ingredient_code: Option<String>,
     #[serde(rename(deserialize = "orden_colacion"))]
     pub order: Option<String>,
     #[serde(rename(deserialize = "dosis_pa"))]
@@ -590,8 +590,8 @@ pub fn parse_prescription_xml_to_csvs<P: AsRef<Path>>(xml_path: P, output_dir: P
 
     // Process each prescription record
     for record in list.records {
-        // Create prescription ID: cod_nacion + nro_definitivo
-        let prescription_id = format!("{}_{}", record.cod_nacion, record.nro_definitivo);
+        // Use cod_nacion as prescription ID (matches DB primary key)
+        let prescription_id = record.cod_nacion.clone();
 
         // Write main prescription record (nested collections are skipped via serde)
         wtr_main.serialize(&record)?;
@@ -610,7 +610,7 @@ pub fn parse_prescription_xml_to_csvs<P: AsRef<Path>>(xml_path: P, output_dir: P
             for ingredient in &form.active_ingredients {
                 wtr_ingredients.write_record([
                     &prescription_id,
-                    &ingredient.active_ingredient_code,
+                    ingredient.active_ingredient_code.as_deref().unwrap_or(""),
                     ingredient.order.as_deref().unwrap_or(""),
                     ingredient.dose.as_deref().unwrap_or(""),
                     ingredient.dose_unit.as_deref().unwrap_or(""),

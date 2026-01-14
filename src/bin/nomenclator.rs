@@ -348,7 +348,9 @@ async fn process_csv(
                     Ok(())
                 }
                 Err(e) => {
-                    tracing::error!(error = %e, "Failed to parse Prescripcion.xml");
+                    tracing::error!(error = ?e, "Failed to parse Prescripcion.xml");
+                    // Print full error chain for debugging
+                    eprintln!("Prescription parse error: {:#}", e);
                     Err(e)
                 }
             }
