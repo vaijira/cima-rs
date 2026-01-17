@@ -21,11 +21,15 @@ urlencoding = "2.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-
-
 [dev-dependencies]
 tempfile = "3.10"
 
-[[bin]]
-name = "nomenclator"
-path = "src/bin/nomenclator.rs"
+[profile.dev]
+debug = 0     # Speed up compilation time and not necessary.
+opt-level = 0
+
+[profile.dev.build-override]
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 3
