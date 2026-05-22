@@ -278,7 +278,7 @@ pub struct PrescriptionForm {
     #[serde(rename(deserialize = "cod_forfar"))]
     pub form_code: String,
     #[serde(rename(deserialize = "cod_forfar_simplificada"))]
-    pub simplified_form_code: String,
+    pub simplified_form_code: Option<String>,
     #[serde(rename(deserialize = "nro_pactiv"))]
     pub num_active_ingredients: Option<String>,
     #[serde(rename(deserialize = "composicion_pa"), default)]
@@ -602,7 +602,7 @@ pub fn parse_prescription_xml_to_csvs<P: AsRef<Path>>(xml_path: P, output_dir: P
             wtr_forms.write_record([
                 &prescription_id,
                 &form.form_code,
-                &form.simplified_form_code,
+                form.simplified_form_code.as_deref().unwrap_or(""),
                 form.num_active_ingredients.as_deref().unwrap_or(""),
             ])?;
 
