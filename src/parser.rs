@@ -125,8 +125,8 @@ pub struct PharmaceuticalFormRecord {
     pub code: String,
     #[serde(rename(deserialize = "formafarmaceutica"))]
     pub name: String,
-    #[serde(rename(deserialize = "codigoformafarmaceuticasimplificada"))]
-    pub simplified_code: String,
+    #[serde(rename(deserialize = "codigoformafarmaceuticasimplificada"), default)]
+    pub simplified_code: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
