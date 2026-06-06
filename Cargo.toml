@@ -1,9 +1,17 @@
 [package]
 name = "cima-rs"
-edition = "2024"
-readme = "README.md"
-rust-version = "1.91"
 version = "0.0.1"
+edition = "2024"
+rust-version = "1.91"
+authors = ["Jorge Perez Burgos <vaijira@gmail.com>"]
+description = "Rust library and CLI providing access to the Spanish AEMPS CIMA REST API and nomenclator XML parser"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/vaijira/cima-rs"
+homepage = "https://github.com/vaijira/cima-rs"
+documentation = "https://docs.rs/cima-rs"
+keywords = ["aemps", "cima", "nomenclator", "medications", "spain"]
+categories = ["api-bindings", "parser-implementations", "command-line-utilities"]
 
 [dependencies]
 tokio = { version = "1.48", features = [ "full" ] }

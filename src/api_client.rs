@@ -149,35 +149,6 @@ impl CimaClient {
             .await
             .with_context(|| format!("Failed to deserialize JSON response from {}", url))
     }
-
-    /// Realiza una petición GET y devuelve el contenido como texto
-    #[instrument(skip(self), fields(url))]
-    pub(crate) async fn get_text(&self, endpoint: &str) -> Result<String> {
-        let url = self.build_url(endpoint);
-        tracing::Span::current().record("url", &url);
-
-        tracing::debug!("Sending GET request for text content");
-
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .with_context(|| format!("Failed to send GET request to {}", url))?;
-
-        let status = response.status();
-        tracing::debug!(%status, "Received response");
-
-        if !status.is_success() {
-            tracing::error!(%status, %url, "API returned error status");
-            anyhow::bail!("API returned error status {}: {}", status, url);
-        }
-
-        response
-            .text()
-            .await
-            .with_context(|| format!("Failed to read text response from {}", url))
-    }
 }
 
 impl Default for CimaClient {

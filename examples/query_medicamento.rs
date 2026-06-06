@@ -54,16 +54,12 @@ async fn main() -> Result<()> {
             println!("Comercializado: {}", if comerc { "Sí" } else { "No" });
         }
 
-        if let Some(triangulo) = medicamento.black_triangle {
-            if triangulo {
-                println!("⚠️  Triángulo negro (medicamento bajo vigilancia adicional)");
-            }
+        if let Some(true) = medicamento.black_triangle {
+            println!("⚠️  Triángulo negro (medicamento bajo vigilancia adicional)");
         }
 
-        if let Some(huerfano) = medicamento.orphan {
-            if huerfano {
-                println!("💊 Medicamento huérfano");
-            }
+        if let Some(true) = medicamento.orphan {
+            println!("💊 Medicamento huérfano");
         }
 
         if args.activos && !medicamento.active_ingredients.is_empty() {

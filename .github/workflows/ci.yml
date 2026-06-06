@@ -1,0 +1,93 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy lints
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features
+
+  release:
+    name: Auto Release and Publish
+    needs: verify
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !startsWith(github.event.head_commit.message, 'chore: release')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Configure Git
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version & publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIGGER_COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          # 1. Determine the version bump
+          VERSION=$(grep -m 1 '^version = ' Cargo.toml | cut -d '"' -f 2)
+          IFS='.' read -r major minor patch <<< "$VERSION"
+          new_patch=$((patch + 1))
+          NEW_VERSION="$major.$minor.$new_patch"
+          echo "Bumping version from $VERSION to $NEW_VERSION"
+
+          # 2. Update Cargo.toml and Cargo.lock
+          sed -i "0,/^version = .*/s//version = \"$NEW_VERSION\"/" Cargo.toml
+          cargo check
+
+          # 3. Commit version increase
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release v$NEW_VERSION [skip ci]"
+          git push origin main
+
+          # 4. Create and push tag
+          git tag "v$NEW_VERSION"
+          git push origin "v$NEW_VERSION"
+
+          # 5. Publish to crates.io
+          cargo publish --token "$CARGO_REGISTRY_TOKEN"
+
+          # 6. Create GitHub Release with changelog
+          RELEASE_NOTES="${TRIGGER_COMMIT_MSG:-$(git log -2 --pretty=%B | tail -n +2)}"
+          gh release create "v$NEW_VERSION" \
+            --title "Release v$NEW_VERSION" \
+            --notes "Changelog:
+          
+          $RELEASE_NOTES"
