@@ -19,7 +19,7 @@ Rust library providing access to the [AEMPS CIMA](https://cima.aemps.es/cima/pub
 ## Installation
 
 ```bash
-cargo install --path .
+cargo install cima-rs
 ```
 
 ## Usage
