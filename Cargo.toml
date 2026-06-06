@@ -16,9 +16,9 @@ categories = ["api-bindings", "parser-implementations", "command-line-utilities"
 [dependencies]
 tokio = { version = "1.48", features = [ "full" ] }
 reqwest = { version = "0.13", features = ["json"] }
-zip = "2.0"
+zip = "8.6"
 anyhow = "1.0"
-quick-xml = { version = "0.37", features = ["serialize"] }
+quick-xml = { version = "0.40", features = ["serialize"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 csv = "1.3"
