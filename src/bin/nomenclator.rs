@@ -1,4 +1,9 @@
-use cima_rs::downloader::download_and_extract_nomenclator;
+use cima_rs::billing::{
+    compute_homogeneous_groups, export_billing_data_to_csvs, extract_parallel_imports,
+    generate_group_presentation_mappings, load_parallel_import_cns_from_prescriptions_csv,
+    parse_billing_csv, tag_parallel_imports_from_prescriptions,
+};
+use cima_rs::downloader::{download_and_extract_nomenclator, download_billing_nomenclator};
 use cima_rs::parser::{
     parse_atc_xml_to_csv, parse_dcp_xml_to_csv, parse_dcpf_xml_to_csv, parse_dcsa_xml_to_csv,
     parse_envases_xml_to_csv, parse_excipientes_xml_to_csv,
@@ -7,6 +12,7 @@ use cima_rs::parser::{
     parse_principio_activo_xml_to_csv, parse_situacion_registro_xml_to_csv,
     parse_unidad_contenido_xml_to_csv, parse_via_administracion_xml_to_csv,
 };
+use cima_rs::terminology::{build_from_aemps_csv_dir, export_terminology_to_csvs};
 use cima_rs::{
     CimaClient, MasterDataParams, MasterDataType, SearchMedicationsParams,
     SearchPresentationsParams,
@@ -21,9 +27,10 @@ use tracing_subscriber::EnvFilter;
 #[command(
     author,
     version,
-    about = "A tool to work with AEMPS CIMA nomenclator data",
+    about = "A tool to work with AEMPS CIMA and SNS Nomenclator data",
     long_about = "This tool provides access to AEMPS CIMA (Centro de Información Online de Medicamentos) \
-                  data through both XML/CSV conversion and REST API queries."
+                  and Ministerio de Sanidad Nomenclátor de Facturación (Homogeneous Groups, Prices, Parallel Imports) \
+                  data through XML/CSV conversion, database-ready CSV export, and REST API queries."
 )]
 struct Args {
     #[command(subcommand)]
@@ -55,11 +62,193 @@ enum Commands {
         /// Number of concurrent parsing tasks (defaults to number of CPU cores)
         #[arg(short, long, help = "Number of concurrent parsing tasks")]
         concurrency: Option<usize>,
+
+        /// Also download and process Nomenclátor de Facturación (Homogeneous Groups, PM/PAB, Parallel Imports)
+        #[arg(
+            long,
+            help = "Also process Nomenclátor de Facturación (Homogeneous Groups, PM/PAB, Parallel Imports)"
+        )]
+        include_billing: bool,
+
+        /// Also export SNOMED CT España / AEMPS Terminology hierarchy CSVs (VTM -> VMP -> VMPP -> AMPP)
+        #[arg(
+            long,
+            help = "Also export SNOMED CT España / AEMPS Terminology hierarchy CSVs (VTM -> VMP -> VMPP -> AMPP)"
+        )]
+        include_terminology: bool,
     },
     /// Query the CIMA REST API
     Api {
         #[command(subcommand)]
         api_command: ApiCommands,
+    },
+    /// Manage and export Nomenclátor de Facturación (Homogeneous Groups, PM/PAB Prices, Parallel Imports)
+    Billing {
+        #[command(subcommand)]
+        billing_command: BillingCommands,
+    },
+    /// Manage and export SNOMED CT España / AEMPS Clinical Terminology (VTM -> VMP -> VMPP -> AMPP)
+    Terminology {
+        #[command(subcommand)]
+        terminology_command: TerminologyCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum BillingCommands {
+    /// Download the official Nomenclátor de Facturación CSV and export relational CSVs for database import
+    Export {
+        /// Directory where the generated relational CSV files will be stored
+        #[arg(
+            short,
+            long,
+            default_value = "billing_csv_output",
+            help = "Output directory for relational CSV files"
+        )]
+        output_dir: PathBuf,
+
+        /// Path to an existing Nomenclátor de Facturación CSV file (if not provided, downloads it automatically)
+        #[arg(short, long, help = "Path to existing Nomenclátor de Facturación CSV")]
+        input_file: Option<PathBuf>,
+
+        /// Directory where the raw downloaded file will be stored
+        #[arg(
+            short,
+            long,
+            default_value = "billing_data",
+            help = "Working directory for raw download"
+        )]
+        work_dir: PathBuf,
+
+        /// Optional path to AEMPS prescriptions.csv to cross-reference parallel imports
+        #[arg(
+            long,
+            help = "Optional path to AEMPS prescriptions.csv for exact parallel import matching"
+        )]
+        prescriptions_csv: Option<PathBuf>,
+    },
+    /// Query a specific Agrupación Homogénea (AH) by code
+    Group {
+        /// Group code (e.g. 1941)
+        #[arg(long)]
+        code: String,
+
+        /// Path to Nomenclátor de Facturación CSV file
+        #[arg(
+            short,
+            long,
+            default_value = "billing_data/nomenclator_facturacion.csv",
+            help = "Path to Nomenclátor de Facturación CSV"
+        )]
+        input_file: PathBuf,
+    },
+    /// List and filter parallel imports
+    ParallelImports {
+        /// Only show active (ALTA) parallel imports
+        #[arg(long)]
+        only_active: bool,
+
+        /// Filter by homogeneous group code
+        #[arg(long)]
+        group_code: Option<String>,
+
+        /// Path to Nomenclátor de Facturación CSV file
+        #[arg(
+            short,
+            long,
+            default_value = "billing_data/nomenclator_facturacion.csv",
+            help = "Path to Nomenclátor de Facturación CSV"
+        )]
+        input_file: PathBuf,
+
+        /// Limit results
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum TerminologyCommands {
+    /// Build terminology index from parsed AEMPS CSV directory and export relational database-ready CSVs
+    Export {
+        /// Directory containing parsed AEMPS CSVs (dcsa.csv, dcp.csv, dcpf.csv, prescriptions.csv)
+        #[arg(
+            short,
+            long,
+            default_value = "csv_output",
+            help = "Input directory with parsed AEMPS CSV files"
+        )]
+        input_dir: PathBuf,
+
+        /// Directory where relational terminology CSVs will be saved
+        #[arg(
+            short,
+            long,
+            default_value = "terminology_csv_output",
+            help = "Output directory for relational terminology CSV files"
+        )]
+        output_dir: PathBuf,
+    },
+    /// Query the full clinical terminology hierarchy for a given Código Nacional (CN)
+    Hierarchy {
+        /// 6-digit National Code (Código Nacional)
+        #[arg(long, help = "Código Nacional (CN)")]
+        cn: String,
+
+        /// Directory containing parsed AEMPS CSVs
+        #[arg(
+            short,
+            long,
+            default_value = "csv_output",
+            help = "Directory with parsed AEMPS CSV files"
+        )]
+        input_dir: PathBuf,
+    },
+    /// Find bioequivalent commercial presentations (AMPP) sharing the same VMP (Virtual Medicinal Product)
+    Equivalents {
+        /// 6-digit National Code (Código Nacional) to find bioequivalents for
+        #[arg(long, group = "identifier", help = "Código Nacional (CN)")]
+        cn: Option<String>,
+
+        /// Virtual Medicinal Product (VMP / DCP) code
+        #[arg(long, group = "identifier", help = "VMP / DCP code")]
+        vmp: Option<String>,
+
+        /// Directory containing parsed AEMPS CSVs
+        #[arg(
+            short,
+            long,
+            default_value = "csv_output",
+            help = "Directory with parsed AEMPS CSV files"
+        )]
+        input_dir: PathBuf,
+
+        /// Limit results
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+    },
+    /// Search terminology concepts across VTM (substances), VMP (virtual products), or AMPP (commercial packs)
+    Search {
+        /// Search text / query string
+        #[arg(long, help = "Search query (e.g. 'Paracetamol' or 'Ibuprofeno')")]
+        query: String,
+
+        /// Search level: 'vtm' (substances), 'vmp' (virtual products), 'ampp' (commercial packs), or 'all'
+        #[arg(long, default_value = "all")]
+        level: String,
+
+        /// Directory containing parsed AEMPS CSVs
+        #[arg(
+            short,
+            long,
+            default_value = "csv_output",
+            help = "Directory with parsed AEMPS CSV files"
+        )]
+        input_dir: PathBuf,
+
+        /// Limit results per section
+        #[arg(short, long, default_value = "10")]
+        limit: usize,
     },
 }
 
@@ -196,8 +385,23 @@ async fn main() -> anyhow::Result<()> {
             output_dir,
             work_dir,
             concurrency,
-        } => process_csv(output_dir, work_dir, concurrency).await,
+            include_billing,
+            include_terminology,
+        } => {
+            process_csv(
+                output_dir,
+                work_dir,
+                concurrency,
+                include_billing,
+                include_terminology,
+            )
+            .await
+        }
         Commands::Api { api_command } => process_api(api_command).await,
+        Commands::Billing { billing_command } => process_billing(billing_command).await,
+        Commands::Terminology {
+            terminology_command,
+        } => process_terminology(terminology_command).await,
     }
 }
 
@@ -205,6 +409,8 @@ async fn process_csv(
     output_dir: PathBuf,
     work_dir: PathBuf,
     concurrency: Option<usize>,
+    include_billing: bool,
+    include_terminology: bool,
 ) -> anyhow::Result<()> {
     // Ensure directories exist
     fs::create_dir_all(&output_dir)?;
@@ -360,15 +566,89 @@ async fn process_csv(
         }
     };
 
-    // 5. Report results
+    // 5. Handle Nomenclátor de Facturación if requested
+    let billing_result: anyhow::Result<Option<cima_rs::BillingExportSummary>> = if include_billing {
+        tracing::info!("Downloading and processing Nomenclátor de Facturación");
+        match download_billing_nomenclator(&work_dir).await {
+            Ok(billing_path) => match parse_billing_csv(&billing_path) {
+                Ok(mut products) => {
+                    let presc_csv = output_dir.join("prescriptions.csv");
+                    if presc_csv.exists()
+                        && let Ok(cns) = load_parallel_import_cns_from_prescriptions_csv(&presc_csv)
+                    {
+                        tag_parallel_imports_from_prescriptions(&mut products, &cns);
+                    }
+                    match export_billing_data_to_csvs(&products, &output_dir) {
+                        Ok(summary) => {
+                            println!("✓ Completed: billing_products.csv");
+                            println!("✓ Completed: homogeneous_groups.csv");
+                            println!("✓ Completed: group_presentations.csv");
+                            println!("✓ Completed: parallel_imports.csv");
+                            Ok(Some(summary))
+                        }
+                        Err(e) => {
+                            tracing::error!(error = ?e, "Failed to export billing CSV files");
+                            Err(e)
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = ?e, "Failed to parse Nomenclátor de Facturación");
+                    Err(e)
+                }
+            },
+            Err(e) => {
+                tracing::error!(error = ?e, "Failed to download Nomenclátor de Facturación");
+                Err(e)
+            }
+        }
+    } else {
+        Ok(None)
+    };
+
+    // 6. Handle Terminology if requested
+    let terminology_result: anyhow::Result<Option<cima_rs::TerminologyExportSummary>> =
+        if include_terminology {
+            tracing::info!(
+                "Building TerminologyIndex and exporting SNOMED CT España / AEMPS relational CSVs"
+            );
+            match build_from_aemps_csv_dir(&output_dir) {
+                Ok(index) => match export_terminology_to_csvs(&index, &output_dir) {
+                    Ok(summary) => {
+                        println!("✓ Completed: terminology_vtm.csv");
+                        println!("✓ Completed: terminology_vmp.csv");
+                        println!("✓ Completed: terminology_vmpp.csv");
+                        println!("✓ Completed: terminology_ampp.csv");
+                        println!("✓ Completed: terminology_hierarchy.csv");
+                        Ok(Some(summary))
+                    }
+                    Err(e) => {
+                        tracing::error!(error = ?e, "Failed to export terminology CSV files");
+                        Err(e)
+                    }
+                },
+                Err(e) => {
+                    tracing::error!(error = ?e, "Failed to build TerminologyIndex from parsed CSV files");
+                    Err(e)
+                }
+            }
+        } else {
+            Ok(None)
+        };
+
+    // 7. Report results
     let successful = results.iter().filter(|r| r.is_ok()).count();
     let failed = results.iter().filter(|r| r.is_err()).count();
     let prescription_success = prescription_result.is_ok();
+    let billing_success = billing_result.is_ok();
+    let terminology_success = terminology_result.is_ok();
 
     tracing::info!(
         successful,
         failed,
         prescription_success,
+        billing_success,
+        terminology_success,
         "CSV parsing completed"
     );
 
@@ -383,10 +663,28 @@ async fn process_csv(
     } else {
         println!("  ✗ Prescription parsing: Failed");
     }
+    if include_billing {
+        if billing_success {
+            println!("  ✓ Billing export: Success (4 CSV files)");
+        } else {
+            println!("  ✗ Billing export: Failed");
+        }
+    }
+    if include_terminology {
+        if terminology_success {
+            println!("  ✓ Terminology export: Success (5 CSV files)");
+        } else {
+            println!("  ✗ Terminology export: Failed");
+        }
+    }
     println!("  📁 Output directory: {:?}", output_dir);
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    if failed > 0 || !prescription_success {
+    if failed > 0
+        || !prescription_success
+        || (include_billing && !billing_success)
+        || (include_terminology && !terminology_success)
+    {
         anyhow::bail!("Some files failed to parse");
     }
 
@@ -714,4 +1012,440 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()> {
+    match billing_command {
+        BillingCommands::Export {
+            output_dir,
+            input_file,
+            work_dir,
+            prescriptions_csv,
+        } => {
+            let csv_path = match input_file {
+                Some(p) => {
+                    if !p.exists() {
+                        anyhow::bail!("Input file does not exist: {:?}", p);
+                    }
+                    p
+                }
+                None => {
+                    tracing::info!(
+                        "Downloading Nomenclátor de Facturación from Ministerio de Sanidad"
+                    );
+                    download_billing_nomenclator(&work_dir).await?
+                }
+            };
+
+            tracing::info!(file = ?csv_path, "Parsing Nomenclátor de Facturación");
+            let mut products = parse_billing_csv(&csv_path)?;
+            tracing::info!(total = products.len(), "Parsed billing products");
+
+            let presc_path = prescriptions_csv.or_else(|| {
+                let default_p = PathBuf::from("csv_output/prescriptions.csv");
+                if default_p.exists() {
+                    Some(default_p)
+                } else {
+                    None
+                }
+            });
+
+            if let Some(ref p_path) = presc_path
+                && p_path.exists()
+            {
+                tracing::info!(
+                    prescriptions = ?p_path,
+                    "Cross-referencing parallel imports with AEMPS prescriptions"
+                );
+                match load_parallel_import_cns_from_prescriptions_csv(p_path) {
+                    Ok(cns) => {
+                        let count = cns.len();
+                        tag_parallel_imports_from_prescriptions(&mut products, &cns);
+                        tracing::info!(matched_cns = count, "Tagged parallel imports from AEMPS");
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Could not read prescriptions.csv for parallel imports, relying on heuristics"
+                        );
+                    }
+                }
+            }
+
+            tracing::info!(output_dir = ?output_dir, "Exporting relational CSVs for database import");
+            let summary = export_billing_data_to_csvs(&products, &output_dir)?;
+
+            println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            println!("Nomenclátor de Facturación - Relational CSV Export Completed");
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            println!(
+                "  ✓ Total Products:               {}",
+                summary.total_products
+            );
+            println!(
+                "  ✓ Active Products (ALTA):       {}",
+                summary.active_products
+            );
+            println!("  ✓ Homogeneous Groups (AH):      {}", summary.total_groups);
+            println!(
+                "  ✓ Group Presentation Mappings:  {}",
+                summary.total_mappings
+            );
+            println!(
+                "  ✓ Parallel Imports (I.P.):      {}",
+                summary.total_parallel_imports
+            );
+            println!("\nExported CSV files (ready for database import):");
+            println!(
+                "  📄 billing_products.csv:         {:?}",
+                summary.products_csv
+            );
+            println!(
+                "  📄 homogeneous_groups.csv:       {:?}",
+                summary.groups_csv
+            );
+            println!(
+                "  📄 group_presentations.csv:      {:?}",
+                summary.group_presentations_csv
+            );
+            println!(
+                "  📄 parallel_imports.csv:         {:?}",
+                summary.parallel_imports_csv
+            );
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+            Ok(())
+        }
+        BillingCommands::Group { code, input_file } => {
+            if !input_file.exists() {
+                anyhow::bail!(
+                    "Nomenclátor CSV not found at {:?}. Run 'nomenclator billing export' or specify --input-file",
+                    input_file
+                );
+            }
+            let products = parse_billing_csv(&input_file)?;
+            let groups = compute_homogeneous_groups(&products);
+            let group = groups.iter().find(|g| g.code == code).ok_or_else(|| {
+                anyhow::anyhow!("Homogeneous group with code '{}' not found", code)
+            })?;
+
+            println!("=== Agrupación Homogénea ===");
+            println!("Código: {}", group.code);
+            println!("Nombre: {}", group.name);
+            if let Some(pm) = group.precio_menor {
+                println!("Precio Menor (PM): {:.2} €", pm);
+            } else {
+                println!("Precio Menor (PM): N/A");
+            }
+            if let Some(pab) = group.precio_mas_bajo {
+                println!("Precio Más Bajo (PAB): {:.2} €", pab);
+            } else {
+                println!("Precio Más Bajo (PAB): N/A");
+            }
+            println!("Total Presentaciones: {}", group.total_presentations);
+            println!(
+                "Presentaciones Activas (ALTA): {}",
+                group.active_presentations
+            );
+            println!(
+                "Tiene Importaciones Paralelas: {}",
+                if group.has_parallel_imports {
+                    "Sí"
+                } else {
+                    "No"
+                }
+            );
+
+            let mappings = generate_group_presentation_mappings(&products, &groups);
+            let group_mappings: Vec<_> = mappings.iter().filter(|m| m.group_code == code).collect();
+
+            println!("\n=== Presentaciones en la agrupación ===");
+            for (i, m) in group_mappings.iter().enumerate() {
+                print!("{}. CN: {} - {}", i + 1, m.cn, m.product_name);
+                if let Some(p) = m.pvp_iva {
+                    print!(" | PVP: {:.2} €", p);
+                }
+                if m.is_precio_mas_bajo {
+                    print!(" [★ PAB]");
+                }
+                if m.is_parallel_import {
+                    print!(" [I.P.]");
+                }
+                if !m.is_active {
+                    print!(" ({})", m.status);
+                }
+                println!();
+            }
+            Ok(())
+        }
+        BillingCommands::ParallelImports {
+            only_active,
+            group_code,
+            input_file,
+            limit,
+        } => {
+            if !input_file.exists() {
+                anyhow::bail!(
+                    "Nomenclátor CSV not found at {:?}. Run 'nomenclator billing export' or specify --input-file",
+                    input_file
+                );
+            }
+            let products = parse_billing_csv(&input_file)?;
+            let mut pis = extract_parallel_imports(&products);
+
+            if only_active {
+                pis.retain(|p| p.is_active);
+            }
+            if let Some(ref g_code) = group_code {
+                pis.retain(|p| p.homogeneous_group_code.as_deref() == Some(g_code.as_str()));
+            }
+
+            println!("=== Importaciones Paralelas ===");
+            println!(
+                "Total encontradas: {} (mostrando hasta {})\n",
+                pis.len(),
+                limit
+            );
+
+            for (i, pi) in pis.iter().take(limit).enumerate() {
+                println!("{}. CN: {} - {}", i + 1, pi.cn, pi.name);
+                if let Some(ref lab) = pi.supplier_lab_name {
+                    println!("   Laboratorio: {}", lab);
+                }
+                if let Some(pvp) = pi.pvp_iva {
+                    println!("   PVP con IVA: {:.2} €", pvp);
+                }
+                if let Some(ref g_name) = pi.homogeneous_group_name {
+                    println!(
+                        "   Agrupación: {} ({})",
+                        g_name,
+                        pi.homogeneous_group_code.as_deref().unwrap_or("")
+                    );
+                }
+                println!(
+                    "   Estado: {} (Detección: {})",
+                    pi.status, pi.detection_source
+                );
+                println!();
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn process_terminology(cmd: TerminologyCommands) -> anyhow::Result<()> {
+    match cmd {
+        TerminologyCommands::Export {
+            input_dir,
+            output_dir,
+        } => {
+            if !input_dir.exists() {
+                anyhow::bail!(
+                    "Input directory {:?} does not exist. Run 'nomenclator csv' first to generate AEMPS CSVs",
+                    input_dir
+                );
+            }
+            tracing::info!(dir = ?input_dir, "Building TerminologyIndex from AEMPS CSVs");
+            let index = build_from_aemps_csv_dir(&input_dir)?;
+            tracing::info!(
+                vtms = index.vtms.len(),
+                vmps = index.vmps.len(),
+                vmpps = index.vmpps.len(),
+                ampps = index.ampps.len(),
+                "TerminologyIndex built successfully"
+            );
+
+            tracing::info!(output_dir = ?output_dir, "Exporting relational terminology CSVs");
+            let summary = export_terminology_to_csvs(&index, &output_dir)?;
+
+            println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            println!("SNOMED CT España / AEMPS Terminology - Relational CSV Export");
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            println!(
+                "  ✓ VTM  (Denominación Común Sustancia Activa):  {}",
+                summary.total_vtms
+            );
+            println!(
+                "  ✓ VMP  (Denominación Común Principio Activo):  {}",
+                summary.total_vmps
+            );
+            println!(
+                "  ✓ VMPP (Denominación Común Formato/Envase):    {}",
+                summary.total_vmpps
+            );
+            println!(
+                "  ✓ AMPP (Presentaciones Comerciales / CN):      {}",
+                summary.total_ampps
+            );
+            println!(
+                "  ✓ Full Hierarchical Rows Resolved:             {}",
+                summary.total_hierarchies
+            );
+            println!("\nExported CSV files (ready for database import):");
+            println!("  📄 terminology_vtm.csv:        {:?}", summary.vtm_csv);
+            println!("  📄 terminology_vmp.csv:        {:?}", summary.vmp_csv);
+            println!("  📄 terminology_vmpp.csv:       {:?}", summary.vmpp_csv);
+            println!("  📄 terminology_ampp.csv:       {:?}", summary.ampp_csv);
+            println!(
+                "  📄 terminology_hierarchy.csv:  {:?}",
+                summary.hierarchy_csv
+            );
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+            Ok(())
+        }
+        TerminologyCommands::Hierarchy { cn, input_dir } => {
+            if !input_dir.exists() {
+                anyhow::bail!(
+                    "Input directory {:?} does not exist. Run 'nomenclator csv' first",
+                    input_dir
+                );
+            }
+            let index = build_from_aemps_csv_dir(&input_dir)?;
+            let hierarchy = index.lookup_by_cn(&cn).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No terminology hierarchy found for Código Nacional '{}'",
+                    cn
+                )
+            })?;
+
+            println!("=== Jerarquía Terapéutica Oficial (SNOMED CT España / REI) ===");
+            println!("CN / AMPP:  {} - {}", hierarchy.cn, hierarchy.ampp_name);
+            if let Some(ref lab) = hierarchy.laboratory {
+                println!("Titular:    {}", lab);
+            }
+            println!(
+                "Comerc.:    {}",
+                if hierarchy.is_commercialized {
+                    "Sí"
+                } else {
+                    "No"
+                }
+            );
+            println!("---------------------------------------------------------------");
+            if let (Some(code), Some(name)) = (&hierarchy.vmpp_code, &hierarchy.vmpp_name) {
+                println!("↳ VMPP:     {} - {}", code, name);
+            } else if let Some(code) = &hierarchy.vmpp_code {
+                println!("↳ VMPP:     {}", code);
+            }
+            if let (Some(code), Some(name)) = (&hierarchy.vmp_code, &hierarchy.vmp_name) {
+                println!("  ↳ VMP:    {} - {}", code, name);
+            } else if let Some(code) = &hierarchy.vmp_code {
+                println!("  ↳ VMP:    {}", code);
+            }
+            if let (Some(code), Some(name)) = (&hierarchy.vtm_code, &hierarchy.vtm_name) {
+                println!("    ↳ VTM:  {} - {}", code, name);
+            } else if let Some(code) = &hierarchy.vtm_code {
+                println!("    ↳ VTM:  {}", code);
+            }
+            println!("---------------------------------------------------------------");
+            Ok(())
+        }
+        TerminologyCommands::Equivalents {
+            cn,
+            vmp,
+            input_dir,
+            limit,
+        } => {
+            if !input_dir.exists() {
+                anyhow::bail!(
+                    "Input directory {:?} does not exist. Run 'nomenclator csv' first",
+                    input_dir
+                );
+            }
+            let index = build_from_aemps_csv_dir(&input_dir)?;
+            let (target_vmp_code, target_label) = match (cn, vmp) {
+                (Some(cn_code), _) => {
+                    let hierarchy = index.lookup_by_cn(&cn_code).ok_or_else(|| {
+                        anyhow::anyhow!("Presentation with CN '{}' not found in index", cn_code)
+                    })?;
+                    let vmp_c = hierarchy.vmp_code.ok_or_else(|| {
+                        anyhow::anyhow!("Presentation CN '{}' has no associated VMP code", cn_code)
+                    })?;
+                    let label = hierarchy.vmp_name.unwrap_or_else(|| vmp_c.clone());
+                    (vmp_c, format!("CN {} (VMP: {})", cn_code, label))
+                }
+                (_, Some(vmp_code)) => {
+                    let label = index
+                        .get_vmp(&vmp_code)
+                        .map(|v| v.name.clone())
+                        .unwrap_or_else(|| vmp_code.clone());
+                    (vmp_code, format!("VMP: {}", label))
+                }
+                (None, None) => anyhow::bail!("Must provide either --cn or --vmp"),
+            };
+
+            let equivalents = index.get_ampps_by_vmp(&target_vmp_code);
+            println!("=== Bioequivalentes Comerciales / Genéricos ===");
+            println!("Para: {}", target_label);
+            println!(
+                "Total presentaciones encontradas: {} (mostrando hasta {})\n",
+                equivalents.len(),
+                limit
+            );
+
+            for (i, ampp) in equivalents.iter().take(limit).enumerate() {
+                print!("{}. CN: {} - {}", i + 1, ampp.cn, ampp.name);
+                if let Some(ref lab) = ampp.laboratory {
+                    print!(" [{}]", lab);
+                }
+                if !ampp.is_commercialized {
+                    print!(" (No comercializado)");
+                }
+                println!();
+            }
+            Ok(())
+        }
+        TerminologyCommands::Search {
+            query,
+            level,
+            input_dir,
+            limit,
+        } => {
+            if !input_dir.exists() {
+                anyhow::bail!(
+                    "Input directory {:?} does not exist. Run 'nomenclator csv' first",
+                    input_dir
+                );
+            }
+            let index = build_from_aemps_csv_dir(&input_dir)?;
+            let level_lower = level.to_lowercase();
+
+            println!("=== Búsqueda en Terminología para '{}' ===", query);
+
+            if level_lower == "all" || level_lower == "vtm" {
+                let vtms = index.search_vtm(&query);
+                println!(
+                    "\n--- VTM / DCSA (Sustancia Activa) [Total: {}] ---",
+                    vtms.len()
+                );
+                for (i, v) in vtms.iter().take(limit).enumerate() {
+                    println!("{}. [{}] {}", i + 1, v.code, v.name);
+                }
+            }
+
+            if level_lower == "all" || level_lower == "vmp" {
+                let vmps = index.search_vmp(&query);
+                println!(
+                    "\n--- VMP / DCP (Principio Activo + Dosis) [Total: {}] ---",
+                    vmps.len()
+                );
+                for (i, v) in vmps.iter().take(limit).enumerate() {
+                    println!("{}. [{}] {}", i + 1, v.code, v.name);
+                }
+            }
+
+            if level_lower == "all" || level_lower == "ampp" {
+                let ampps = index.search_ampp(&query);
+                println!(
+                    "\n--- AMPP / Presentaciones Comerciales [Total: {}] ---",
+                    ampps.len()
+                );
+                for (i, a) in ampps.iter().take(limit).enumerate() {
+                    println!("{}. CN: {} - {}", i + 1, a.cn, a.name);
+                }
+            }
+
+            println!();
+            Ok(())
+        }
+    }
 }

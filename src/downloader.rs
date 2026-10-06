@@ -6,6 +6,9 @@ use zip::ZipArchive;
 
 const NOMENCLATOR_DUMP_URL: &str = "https://listadomedicamentos.aemps.gob.es/prescripcion.zip";
 
+/// Official download URL for the monthly Nomenclátor de Facturación CSV from Ministerio de Sanidad.
+pub const BILLING_NOMENCLATOR_EXPORT_URL: &str = "https://www.sanidad.gob.es/profesionales/nomenclator.do?metodo=buscarProductos&especialidad=%25%25%25&d-4015021-e=1&6578706f7274=1";
+
 /// Downloads and extracts the Nomenclator dump into the specified directory.
 pub async fn download_and_extract_nomenclator<P: AsRef<std::path::Path>>(
     target_dir: P,
@@ -55,6 +58,35 @@ pub async fn download_and_extract_nomenclator<P: AsRef<std::path::Path>>(
     Ok(target_dir)
 }
 
+/// Downloads the official monthly Nomenclátor de Facturación CSV from Ministerio de Sanidad
+/// into the specified directory (`nomenclator_facturacion.csv`).
+pub async fn download_billing_nomenclator<P: AsRef<std::path::Path>>(
+    target_dir: P,
+) -> anyhow::Result<PathBuf> {
+    let target_dir = target_dir.as_ref().to_path_buf();
+    fs::create_dir_all(&target_dir).context("Failed to create billing target directory")?;
+
+    let outpath = target_dir.join("nomenclator_facturacion.csv");
+
+    if outpath.exists() && fs::metadata(&outpath).map(|m| m.len() > 0).unwrap_or(false) {
+        return Ok(outpath);
+    }
+
+    let response = reqwest::get(BILLING_NOMENCLATOR_EXPORT_URL)
+        .await
+        .context("Failed to download Nomenclátor de Facturación CSV from Ministerio de Sanidad")?;
+
+    let content = response
+        .bytes()
+        .await
+        .context("Failed to read response bytes")?;
+
+    fs::write(&outpath, content)
+        .context("Failed to write Nomenclátor de Facturación CSV to file")?;
+
+    Ok(outpath)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,5 +100,19 @@ mod tests {
         let result = download_and_extract_nomenclator(&target_dir).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), target_dir);
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires network access to external Ministerio server
+    async fn test_download_billing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let target_dir = temp_dir.path().join("billing");
+        fs::create_dir_all(&target_dir).unwrap();
+        let result = download_billing_nomenclator(&target_dir).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            target_dir.join("nomenclator_facturacion.csv")
+        );
     }
 }

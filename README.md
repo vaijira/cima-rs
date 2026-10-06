@@ -5,6 +5,17 @@ Rust library providing access to the [AEMPS CIMA](https://cima.aemps.es/cima/pub
 ## Features
 
 - **XML Data Dumps**: Download and parse CIMA nomenclator XML files to CSV
+- **SNS Billing Nomenclator**: Download and export official Ministerio de Sanidad *Nomenclátor de Facturación* data to relational database-ready CSVs:
+  - **Agrupaciones Homogéneas (AH)**: Official group codes and descriptions
+  - **Pricing**: PVP con IVA, Precio de Referencia, Precios Menores (PM), and Precios Más Bajos (PAB)
+  - **Funding & Co-payment**: ALTA/BAJA status, co-payment tiers (NORMAL, ESPECIAL, SIN APORTACION)
+  - **Parallel Imports (I.P.)**: Identification and cross-referencing of parallel-distributed medicines
+- **SNOMED CT España / AEMPS Clinical Terminology**: Full 4-tier hierarchical representation:
+  - **VTM** (*Virtual Therapeutic Moiety* / DCSA): Active substance
+  - **VMP** (*Virtual Medicinal Product* / DCP): Substance + strength + pharmaceutical form
+  - **VMPP** (*Virtual Medicinal Product Pack* / DCPF): VMP + pack size/count
+  - **AMPP** (*Actual Medicinal Product Pack* / Presentación comercial): Authorized commercial pack with Código Nacional (CN)
+  - Bi-directional $O(1)$ indexing, bioequivalent presentation lookup, and database-ready relational CSV exports
 - **REST API Client**: Complete async client for the CIMA REST API
   - Medication information (`medicamentos`)
   - Commercial presentations (`presentaciones`)
@@ -14,7 +25,7 @@ Rust library providing access to the [AEMPS CIMA](https://cima.aemps.es/cima/pub
   - Segmented documents (ficha técnica, prospecto)
   - Master data catalogs
   - Change logs
-- **CLI Tool**: `nomenclator` binary for both CSV conversion and API queries
+- **CLI Tool**: `nomenclator` binary for XML/CSV conversion, billing relational export, terminology hierarchy queries, and API queries
 
 ## Installation
 
@@ -26,7 +37,7 @@ cargo install cima-rs
 
 ### CLI Tool: `nomenclator`
 
-The `nomenclator` binary provides two modes of operation:
+The `nomenclator` binary provides four modes of operation:
 
 #### CSV Mode: Download and Convert XML to CSV
 
@@ -36,6 +47,9 @@ nomenclator csv --output-dir ./output --work-dir ./data
 
 # With custom concurrency
 nomenclator csv --concurrency 8
+
+# Also download and process billing and terminology relational CSVs in one step
+nomenclator csv --output-dir ./output --include-billing --include-terminology
 ```
 
 This will:
@@ -44,6 +58,51 @@ This will:
 - Extract all XML files
 - Parse them in parallel to CSV format
 - Generate 20+ CSV files ready for database import
+
+#### Billing Mode: Nomenclátor de Facturación (Homogeneous Groups & Prices)
+
+```bash
+# Download and export relational CSV files ready for database import
+nomenclator billing export --output-dir ./billing_output
+
+# Export using an existing local file and cross-reference with AEMPS prescriptions
+nomenclator billing export --input-file ./nomenclator.csv --prescriptions-csv ./output/prescriptions.csv --output-dir ./billing_output
+
+# Query a specific Agrupación Homogénea (shows PM, PAB, and presentations)
+nomenclator billing group --code 1941
+
+# List parallel imports
+nomenclator billing parallel-imports --only-active --limit 20
+```
+
+This exports 4 clean relational CSV files:
+1. `billing_products.csv`: Full normalized product and pricing catalog
+2. `homogeneous_groups.csv`: Agrupaciones Homogéneas with official Precio Menor (PM) and calculated Precio Más Bajos (PAB)
+3. `group_presentations.csv`: Relational mapping table linking presentations to groups and identifying `[★ PAB]` items
+4. `parallel_imports.csv`: Identified parallel import presentations with commercialization and pricing data
+
+#### Terminology Mode: SNOMED CT España / AEMPS Clinical Hierarchy
+
+```bash
+# Build terminology index from parsed AEMPS CSVs and export relational CSVs
+nomenclator terminology export --input-dir ./output --output-dir ./terminology_output
+
+# Query the full clinical hierarchy for a Código Nacional (CN)
+nomenclator terminology hierarchy --cn 650123
+
+# Find bioequivalent commercial/generic presentations sharing the same VMP
+nomenclator terminology equivalents --cn 650123
+
+# Search concepts across VTM, VMP, or AMPP
+nomenclator terminology search --query "Paracetamol"
+```
+
+This exports 5 relational CSV files ready for database ingestion:
+1. `terminology_vtm.csv`: Virtual Therapeutic Moieties (`code`, `name`)
+2. `terminology_vmp.csv`: Virtual Medicinal Products (`code`, `name`, `vtm_code`)
+3. `terminology_vmpp.csv`: Virtual Medicinal Product Packs (`code`, `name`, `vmp_code`)
+4. `terminology_ampp.csv`: Actual Medicinal Product Packs (`code`, `cn`, `name`, `vmpp_code`, `laboratory`, `is_commercialized`)
+5. `terminology_hierarchy.csv`: Denormalized full hierarchy row per commercial presentation
 
 #### API Mode: Query REST API
 
@@ -83,7 +142,7 @@ Available master data types (`--tipo`):
 
 ### Rust Library API
 
-```rust
+```rust,no_run
 use cima_rs::{CimaClient, SearchMedicationsParams};
 
 #[tokio::main]
@@ -119,7 +178,51 @@ fn main() -> Result<()> {
 }
 ```
 
-This generates multiple normalized CSV files:
+#### Billing Nomenclator & Homogeneous Groups
+
+```rust,no_run
+use cima_rs::billing::{parse_billing_csv, compute_homogeneous_groups, export_billing_data_to_csvs};
+use anyhow::Result;
+
+fn main() -> Result<()> {
+    let products = parse_billing_csv("billing_data/nomenclator_facturacion.csv")?;
+    let groups = compute_homogeneous_groups(&products);
+    println!("Processed {} homogeneous groups", groups.len());
+
+    let summary = export_billing_data_to_csvs(&products, "billing_csv_output")?;
+    println!("Exported {} products to database CSVs", summary.total_products);
+    Ok(())
+}
+```
+
+#### SNOMED CT España / AEMPS Clinical Terminology
+
+```rust,no_run
+use cima_rs::terminology::{build_from_aemps_csv_dir, export_terminology_to_csvs};
+use anyhow::Result;
+
+fn main() -> Result<()> {
+    // Build O(1) bi-directional hierarchy index from parsed AEMPS CSVs
+    let index = build_from_aemps_csv_dir("csv_output")?;
+
+    // Traverse upwards: CN -> VMPP -> VMP -> VTM
+    if let Some(hierarchy) = index.lookup_by_cn("650123") {
+        println!("Presentation: {}", hierarchy.ampp_name);
+        println!("VMP: {:?}", hierarchy.vmp_name);
+        println!("VTM: {:?}", hierarchy.vtm_name);
+    }
+
+    // Traverse downwards: find all bioequivalent commercial presentations for a VMP
+    let equivalents = index.get_equivalents_by_cn("650123");
+    for eq in equivalents {
+        println!("Bioequivalent: CN {} - {}", eq.cn, eq.name);
+    }
+
+    // Export relational CSVs ready for database ingestion
+    export_terminology_to_csvs(&index, "terminology_csv_output")?;
+    Ok(())
+}
+```
 
 ## API Endpoints
 

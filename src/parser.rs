@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use quick_xml::de::from_reader;
+use quick_xml::events::Event;
+use quick_xml::writer::Writer;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Cursor};
 use std::path::Path;
 
 // Helper module for deserializing "0"/"1" strings as booleans
@@ -323,6 +325,7 @@ pub struct SupplyProblem {
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename = "prescription")]
 pub struct PrescriptionRecord {
     pub cod_nacion: String,
     pub nro_definitivo: String,
@@ -568,9 +571,8 @@ impl_xml_parser!(
 /// - `prescription_supply_problems.csv` - Supply problems (1:N)
 pub fn parse_prescription_xml_to_csvs<P: AsRef<Path>>(xml_path: P, output_dir: P) -> Result<()> {
     let file = File::open(xml_path)?;
-    let reader = BufReader::new(file);
-    let list: PrescriptionList =
-        from_reader(reader).context("Failed to deserialize Prescription XML")?;
+    let mut reader = quick_xml::Reader::from_reader(BufReader::new(file));
+    reader.config_mut().trim_text(true);
 
     // Create CSV writers for each output file
     let mut wtr_main = csv::Writer::from_path(output_dir.as_ref().join("prescriptions.csv"))?;
@@ -588,71 +590,108 @@ pub fn parse_prescription_xml_to_csvs<P: AsRef<Path>>(xml_path: P, output_dir: P
     let mut wtr_supply =
         csv::Writer::from_path(output_dir.as_ref().join("prescription_supply_problems.csv"))?;
 
-    // Process each prescription record
-    for record in list.records {
-        // Use cod_nacion as prescription ID (matches DB primary key)
-        let prescription_id = record.cod_nacion.clone();
+    let mut event_buf = Vec::new();
+    let mut item_buf = Vec::new();
+    let mut inner_buf = Vec::new();
 
-        // Write main prescription record (nested collections are skipped via serde)
-        wtr_main.serialize(&record)?;
+    loop {
+        event_buf.clear();
+        match reader.read_event_into(&mut event_buf)? {
+            Event::Start(ref e) if e.name().as_ref() == "prescription" => {
+                item_buf.clear();
+                let mut writer = Writer::new(Cursor::new(&mut item_buf));
+                writer.write_event(Event::Start(e.clone()))?;
 
-        // Write pharmaceutical form and its nested entities
-        if let Some(form) = &record.forms {
-            // Write form record
-            wtr_forms.write_record([
-                &prescription_id,
-                &form.form_code,
-                form.simplified_form_code.as_deref().unwrap_or(""),
-                form.num_active_ingredients.as_deref().unwrap_or(""),
-            ])?;
+                let mut depth = 0usize;
+                loop {
+                    inner_buf.clear();
+                    let event = reader.read_event_into(&mut inner_buf)?;
+                    match event {
+                        Event::Start(ref inner_e) => {
+                            depth += 1;
+                            writer.write_event(Event::Start(inner_e.clone()))?;
+                        }
+                        Event::End(ref inner_e) => {
+                            if depth == 0 && inner_e.name().as_ref() == "prescription" {
+                                writer.write_event(Event::End(inner_e.clone()))?;
+                                break;
+                            }
+                            depth = depth.saturating_sub(1);
+                            writer.write_event(Event::End(inner_e.clone()))?;
+                        }
+                        Event::Eof => anyhow::bail!("Unexpected EOF inside <prescription>"),
+                        other => {
+                            writer.write_event(other)?;
+                        }
+                    }
+                }
 
-            // Write active ingredients
-            for ingredient in &form.active_ingredients {
-                wtr_ingredients.write_record([
-                    &prescription_id,
-                    ingredient.active_ingredient_code.as_deref().unwrap_or(""),
-                    ingredient.order.as_deref().unwrap_or(""),
-                    ingredient.dose.as_deref().unwrap_or(""),
-                    ingredient.dose_unit.as_deref().unwrap_or(""),
-                    ingredient.composition_dose.as_deref().unwrap_or(""),
-                    ingredient.composition_unit.as_deref().unwrap_or(""),
-                    ingredient.administration_dose.as_deref().unwrap_or(""),
-                    ingredient.administration_unit.as_deref().unwrap_or(""),
-                    ingredient.prescription_dose.as_deref().unwrap_or(""),
-                    ingredient.prescription_unit.as_deref().unwrap_or(""),
-                ])?;
+                let record: PrescriptionRecord = from_reader(Cursor::new(&item_buf))
+                    .context("Failed to deserialize prescription record")?;
+
+                // Use cod_nacion as prescription ID (matches DB primary key)
+                let prescription_id = record.cod_nacion.clone();
+
+                // Write main prescription record (nested collections are skipped via serde)
+                wtr_main.serialize(&record)?;
+
+                // Write pharmaceutical form and its nested entities
+                if let Some(form) = &record.forms {
+                    wtr_forms.write_record([
+                        &prescription_id,
+                        &form.form_code,
+                        form.simplified_form_code.as_deref().unwrap_or(""),
+                        form.num_active_ingredients.as_deref().unwrap_or(""),
+                    ])?;
+
+                    for ingredient in &form.active_ingredients {
+                        wtr_ingredients.write_record([
+                            &prescription_id,
+                            ingredient.active_ingredient_code.as_deref().unwrap_or(""),
+                            ingredient.order.as_deref().unwrap_or(""),
+                            ingredient.dose.as_deref().unwrap_or(""),
+                            ingredient.dose_unit.as_deref().unwrap_or(""),
+                            ingredient.composition_dose.as_deref().unwrap_or(""),
+                            ingredient.composition_unit.as_deref().unwrap_or(""),
+                            ingredient.administration_dose.as_deref().unwrap_or(""),
+                            ingredient.administration_unit.as_deref().unwrap_or(""),
+                            ingredient.prescription_dose.as_deref().unwrap_or(""),
+                            ingredient.prescription_unit.as_deref().unwrap_or(""),
+                        ])?;
+                    }
+
+                    for route in &form.admin_routes {
+                        wtr_routes.write_record([&prescription_id, &route.route_code])?;
+                    }
+                }
+
+                // Write ATC codes and their duplicates
+                for atc in &record.atc_codes {
+                    wtr_atc.write_record([&prescription_id, &atc.atc_code])?;
+
+                    for duplicate in &atc.duplicates {
+                        wtr_atc_duplicates.write_record([
+                            &prescription_id,
+                            &atc.atc_code,
+                            &duplicate.duplicate_atc,
+                            duplicate.description.as_deref().unwrap_or(""),
+                            duplicate.effect.as_deref().unwrap_or(""),
+                            duplicate.recommendation.as_deref().unwrap_or(""),
+                        ])?;
+                    }
+                }
+
+                // Write supply problems
+                for problem in &record.supply_problems {
+                    wtr_supply.write_record([
+                        &prescription_id,
+                        problem.start_date.as_deref().unwrap_or(""),
+                        problem.observations.as_deref().unwrap_or(""),
+                    ])?;
+                }
             }
-
-            // Write administration routes
-            for route in &form.admin_routes {
-                wtr_routes.write_record([&prescription_id, &route.route_code])?;
-            }
-        }
-
-        // Write ATC codes and their duplicates
-        for atc in &record.atc_codes {
-            wtr_atc.write_record([&prescription_id, &atc.atc_code])?;
-
-            // Write ATC duplicates
-            for duplicate in &atc.duplicates {
-                wtr_atc_duplicates.write_record([
-                    &prescription_id,
-                    &atc.atc_code,
-                    &duplicate.duplicate_atc,
-                    duplicate.description.as_deref().unwrap_or(""),
-                    duplicate.effect.as_deref().unwrap_or(""),
-                    duplicate.recommendation.as_deref().unwrap_or(""),
-                ])?;
-            }
-        }
-
-        // Write supply problems
-        for problem in &record.supply_problems {
-            wtr_supply.write_record([
-                &prescription_id,
-                problem.start_date.as_deref().unwrap_or(""),
-                problem.observations.as_deref().unwrap_or(""),
-            ])?;
+            Event::Eof => break,
+            _ => {}
         }
     }
 
