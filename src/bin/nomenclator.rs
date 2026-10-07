@@ -1,8 +1,8 @@
 use cima_rs::billing::{
-    builtin_ema_spain_records, compute_homogeneous_groups, export_billing_data_to_csvs,
-    extract_parallel_imports, generate_group_presentation_mappings, load_ema_register_csv,
+    ParallelImportDetector, ParallelImporterCatalog, builtin_ema_spain_records,
+    compute_homogeneous_groups, export_billing_data_to_csvs, extract_parallel_imports,
+    generate_group_presentation_mappings, load_ema_register_csv,
     load_parallel_import_cns_from_prescriptions_csv, merge_ema_records, parse_billing_csv,
-    ParallelImportDetector, ParallelImporterCatalog,
 };
 use cima_rs::downloader::{
     download_and_extract_nomenclator, download_billing_nomenclator,
@@ -153,10 +153,7 @@ enum BillingCommands {
         ema_register: Option<String>,
 
         /// Optional path to custom parallel importers catalog file (TXT or CSV)
-        #[arg(
-            long,
-            help = "Optional path to custom parallel importers catalog file"
-        )]
+        #[arg(long, help = "Optional path to custom parallel importers catalog file")]
         importers_list: Option<PathBuf>,
     },
     /// Query a specific Agrupación Homogénea (AH) by code
@@ -201,17 +198,11 @@ enum BillingCommands {
         ema_register: Option<String>,
 
         /// Optional path to custom parallel importers catalog file
-        #[arg(
-            long,
-            help = "Optional path to custom parallel importers catalog file"
-        )]
+        #[arg(long, help = "Optional path to custom parallel importers catalog file")]
         importers_list: Option<PathBuf>,
 
         /// Filter by minimum confidence score (e.g. 90, 95, 100)
-        #[arg(
-            long,
-            help = "Filter by minimum confidence score (e.g. 90, 95, 100)"
-        )]
+        #[arg(long, help = "Filter by minimum confidence score (e.g. 90, 95, 100)")]
         min_confidence: Option<u8>,
 
         /// Filter by detection source substring (e.g. 'ema', 'aemps', 'importer', 'syntax')
@@ -493,7 +484,10 @@ async fn resolve_ema_register_records(
     let loaded = match ema_register_arg {
         Some(target) => {
             if target.starts_with("http://") || target.starts_with("https://") {
-                tracing::info!(url = target, "Downloading EMA Parallel Distribution Register from URL");
+                tracing::info!(
+                    url = target,
+                    "Downloading EMA Parallel Distribution Register from URL"
+                );
                 match download_ema_parallel_distribution_register(work_dir, Some(target)).await {
                     Ok(path) => {
                         tracing::info!(path = ?path, "Loading downloaded EMA Register CSV");
@@ -521,7 +515,9 @@ async fn resolve_ema_register_records(
                 tracing::info!(path = ?cached_path, "Found cached EMA Parallel Distribution Register CSV in work directory");
                 load_ema_register_csv(&cached_path).ok()
             } else {
-                tracing::info!("Downloading EMA Parallel Distribution Register from official portal");
+                tracing::info!(
+                    "Downloading EMA Parallel Distribution Register from official portal"
+                );
                 match download_ema_parallel_distribution_register(work_dir, None).await {
                     Ok(path) => {
                         tracing::info!(path = ?path, "Loading downloaded EMA Register CSV");
@@ -726,16 +722,21 @@ async fn process_csv(
                 Ok(mut products) => {
                     let presc_csv = output_dir.join("prescriptions.csv");
                     let aemps_cns = if presc_csv.exists() {
-                        load_parallel_import_cns_from_prescriptions_csv(&presc_csv).unwrap_or_default()
+                        load_parallel_import_cns_from_prescriptions_csv(&presc_csv)
+                            .unwrap_or_default()
                     } else {
                         std::collections::HashSet::new()
                     };
                     let importer_catalog = match importers_list {
-                        Some(ref path) => ParallelImporterCatalog::from_file(path).unwrap_or_default(),
+                        Some(ref path) => {
+                            ParallelImporterCatalog::from_file(path).unwrap_or_default()
+                        }
                         None => ParallelImporterCatalog::new_default(),
                     };
-                    let ema_records = resolve_ema_register_records(ema_register.as_deref(), &work_dir).await;
-                    let detector = ParallelImportDetector::new(importer_catalog, ema_records, aemps_cns);
+                    let ema_records =
+                        resolve_ema_register_records(ema_register.as_deref(), &work_dir).await;
+                    let detector =
+                        ParallelImportDetector::new(importer_catalog, ema_records, aemps_cns);
                     detector.tag_products(&mut products);
                     match export_billing_data_to_csvs(&products, &output_dir) {
                         Ok(summary) => {
@@ -1243,7 +1244,8 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
             };
 
             // 2. EMA Parallel Distribution Register
-            let ema_records = resolve_ema_register_records(ema_register.as_deref(), &work_dir).await;
+            let ema_records =
+                resolve_ema_register_records(ema_register.as_deref(), &work_dir).await;
 
             // 3. AEMPS Prescriptions official cross-reference
             let aemps_cns = if let Some(ref p_path) = presc_path
@@ -1256,7 +1258,10 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
                 match load_parallel_import_cns_from_prescriptions_csv(p_path) {
                     Ok(cns) => {
                         let count = cns.len();
-                        tracing::info!(matched_cns = count, "Loaded official parallel import CNs from AEMPS");
+                        tracing::info!(
+                            matched_cns = count,
+                            "Loaded official parallel import CNs from AEMPS"
+                        );
                         cns
                     }
                     Err(e) => {

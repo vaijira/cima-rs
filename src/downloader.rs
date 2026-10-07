@@ -107,7 +107,8 @@ pub async fn download_ema_parallel_distribution_register<P: AsRef<std::path::Pat
     url: Option<&str>,
 ) -> anyhow::Result<PathBuf> {
     let target_dir = target_dir.as_ref().to_path_buf();
-    fs::create_dir_all(&target_dir).context("Failed to create target directory for EMA register")?;
+    fs::create_dir_all(&target_dir)
+        .context("Failed to create target directory for EMA register")?;
 
     let outpath = target_dir.join("ema_parallel_distribution.csv");
 
@@ -146,7 +147,11 @@ pub async fn download_ema_parallel_distribution_register<P: AsRef<std::path::Pat
         .with_context(|| format!("Failed to download EMA register from {}", download_url))?;
 
     if !response.status().is_success() {
-        anyhow::bail!("HTTP request to {} returned status {}", download_url, response.status());
+        anyhow::bail!(
+            "HTTP request to {} returned status {}",
+            download_url,
+            response.status()
+        );
     }
 
     let content = response
@@ -216,7 +221,10 @@ async fn fetch_from_iris_portal(portal_url: &str) -> anyhow::Result<Vec<u8>> {
         .and_then(|s| s.split('"').next())
         .unwrap_or("7b138792-1090-45b6-9241-8f8d96d8c372");
 
-    let download_service_url = format!("https://iris.ema.europa.eu/_services/download-as-excel/{}", service_id);
+    let download_service_url = format!(
+        "https://iris.ema.europa.eu/_services/download-as-excel/{}",
+        service_id
+    );
 
     let view_layout = page_html
         .split("data-view-layouts=\"")
@@ -226,7 +234,10 @@ async fn fetch_from_iris_portal(portal_url: &str) -> anyhow::Result<Vec<u8>> {
 
     let mut post_req = client
         .post(&download_service_url)
-        .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+        .header(
+            "Content-Type",
+            "application/x-www-form-urlencoded; charset=UTF-8",
+        )
         .header("X-Requested-With", "XMLHttpRequest");
 
     if !cookies.is_empty() {
@@ -240,10 +251,7 @@ async fn fetch_from_iris_portal(portal_url: &str) -> anyhow::Result<Vec<u8>> {
         urlencoding::encode("ema_name ASC"),
     );
 
-    let post_resp = post_req
-        .body(form_body)
-        .send()
-        .await?;
+    let post_resp = post_req.body(form_body).send().await?;
 
     let bytes = post_resp.bytes().await?;
 
@@ -251,7 +259,9 @@ async fn fetch_from_iris_portal(portal_url: &str) -> anyhow::Result<Vec<u8>> {
         || bytes.starts_with(b"<!DOCTYPE")
         || bytes.starts_with(b"<html")
     {
-        anyhow::bail!("Portal rejected automated download request (anti-automation session challenge)");
+        anyhow::bail!(
+            "Portal rejected automated download request (anti-automation session challenge)"
+        );
     }
 
     Ok(bytes.to_vec())

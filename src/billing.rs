@@ -324,8 +324,9 @@ impl ParallelImporterCatalog {
 
     /// Loads custom importers from an external text or CSV file (one name per line or CSV column).
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path.as_ref())
-            .with_context(|| format!("Failed to open importers list file at {:?}", path.as_ref()))?;
+        let file = File::open(path.as_ref()).with_context(|| {
+            format!("Failed to open importers list file at {:?}", path.as_ref())
+        })?;
         let reader = BufReader::new(file);
         let mut catalog = Self::new_default();
 
@@ -413,7 +414,12 @@ pub struct EmaParallelDistributionRecord {
 /// Checks whether a destination country corresponds to Spain.
 pub fn is_destination_spain(dest: &str) -> bool {
     let d = dest.trim().to_lowercase();
-    d == "spain" || d == "españa" || d == "espana" || d == "es" || d.contains("spain") || d.contains("españa")
+    d == "spain"
+        || d == "españa"
+        || d == "espana"
+        || d == "es"
+        || d.contains("spain")
+        || d.contains("españa")
 }
 
 /// Checks whether an EMA notification status is active / valid.
@@ -472,7 +478,10 @@ pub fn parse_ema_register_csv<R: Read>(reader: R) -> Result<Vec<EmaParallelDistr
     let get_idx = |names: &[&str]| -> Option<usize> {
         for name in names {
             let target = name.to_lowercase();
-            if let Some(pos) = headers.iter().position(|h| h == &target || h.contains(&target)) {
+            if let Some(pos) = headers
+                .iter()
+                .position(|h| h == &target || h.contains(&target))
+            {
                 return Some(pos);
             }
         }
@@ -566,9 +575,15 @@ pub fn parse_ema_register_csv<R: Read>(reader: R) -> Result<Vec<EmaParallelDistr
 }
 
 /// Loads EMA Parallel Distribution Register records from a CSV file.
-pub fn load_ema_register_csv<P: AsRef<Path>>(path: P) -> Result<Vec<EmaParallelDistributionRecord>> {
-    let file = File::open(path.as_ref())
-        .with_context(|| format!("Failed to open EMA Parallel Distribution CSV at {:?}", path.as_ref()))?;
+pub fn load_ema_register_csv<P: AsRef<Path>>(
+    path: P,
+) -> Result<Vec<EmaParallelDistributionRecord>> {
+    let file = File::open(path.as_ref()).with_context(|| {
+        format!(
+            "Failed to open EMA Parallel Distribution CSV at {:?}",
+            path.as_ref()
+        )
+    })?;
     parse_ema_register_csv(file)
 }
 
@@ -1831,18 +1846,12 @@ mod tests {
             normalize_company_name("Abacus Medicine A/S"),
             "ABACUS MEDICINE"
         );
-        assert_eq!(
-            normalize_company_name("ORIFARM GMBH"),
-            "ORIFARM"
-        );
+        assert_eq!(normalize_company_name("ORIFARM GMBH"), "ORIFARM");
         assert_eq!(
             normalize_company_name("EURIM-PHARM ARZNEIMITTEL GMBH"),
             "EURIM PHARM"
         );
-        assert_eq!(
-            normalize_company_name("Disfarma, S.L.U."),
-            "DISFARMA"
-        );
+        assert_eq!(normalize_company_name("Disfarma, S.L.U."), "DISFARMA");
         assert_eq!(
             normalize_company_name("Laboratorios Cinfa, S.A."),
             "LABORATORIOS CINFA"
@@ -1921,7 +1930,11 @@ Xarelto,rivaroxaban,EU/1/08/472,Kohlpharma GmbH,Spain,Germany,Withdrawn,EMA/PD/0
             )
             .unwrap();
         assert_eq!(det_aemps.confidence_score, 100);
-        assert!(det_aemps.matched_sources.contains(&"aemps_official".to_string()));
+        assert!(
+            det_aemps
+                .matched_sources
+                .contains(&"aemps_official".to_string())
+        );
 
         // Tier 1: EMA register match
         let det_ema = detector
@@ -1933,7 +1946,11 @@ Xarelto,rivaroxaban,EU/1/08/472,Kohlpharma GmbH,Spain,Germany,Withdrawn,EMA/PD/0
             )
             .unwrap();
         assert_eq!(det_ema.confidence_score, 100);
-        assert!(det_ema.matched_sources.contains(&"ema_register".to_string()));
+        assert!(
+            det_ema
+                .matched_sources
+                .contains(&"ema_register".to_string())
+        );
         assert_eq!(det_ema.origin_country.as_deref(), Some("Germany"));
 
         // Tier 2: Importer catalog match
@@ -1946,7 +1963,11 @@ Xarelto,rivaroxaban,EU/1/08/472,Kohlpharma GmbH,Spain,Germany,Withdrawn,EMA/PD/0
             )
             .unwrap();
         assert_eq!(det_catalog.confidence_score, 95);
-        assert!(det_catalog.matched_sources.contains(&"importer_catalog".to_string()));
+        assert!(
+            det_catalog
+                .matched_sources
+                .contains(&"importer_catalog".to_string())
+        );
 
         // Tier 3: Syntax heuristic match
         let det_syntax = detector
@@ -1958,7 +1979,11 @@ Xarelto,rivaroxaban,EU/1/08/472,Kohlpharma GmbH,Spain,Germany,Withdrawn,EMA/PD/0
             )
             .unwrap();
         assert_eq!(det_syntax.confidence_score, 90);
-        assert!(det_syntax.matched_sources.contains(&"name_syntax".to_string()));
+        assert!(
+            det_syntax
+                .matched_sources
+                .contains(&"name_syntax".to_string())
+        );
 
         // Negative: Regular product
         let det_none = detector.detect(
@@ -2031,6 +2056,9 @@ Xarelto,rivaroxaban,EU/1/08/472,Kohlpharma GmbH,Spain,Germany,Withdrawn,EMA/PD/0
         assert!(merged.iter().any(|r| r.product_name == "Humira"));
         let eliquis = merged.iter().find(|r| r.product_name == "Eliquis").unwrap();
         // The downloaded one took precedence for Eliquis
-        assert_eq!(eliquis.notification_number.as_deref(), Some("EMAPD/2026/01"));
+        assert_eq!(
+            eliquis.notification_number.as_deref(),
+            Some("EMAPD/2026/01")
+        );
     }
 }

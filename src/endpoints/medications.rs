@@ -201,7 +201,9 @@ impl CimaClient {
         registration_number: Option<&str>,
         national_code: Option<&str>,
     ) -> Result<crate::models::ParallelImportDossierInfo> {
-        let med = self.get_medication(registration_number, national_code).await?;
+        let med = self
+            .get_medication(registration_number, national_code)
+            .await?;
         let catalog = crate::billing::ParallelImporterCatalog::new_default();
         let is_lab_importer = catalog.is_importer(&med.labtitular);
         let has_syntax = crate::billing::detect_parallel_import_syntax(&med.name);
@@ -212,7 +214,10 @@ impl CimaClient {
 
         if is_aip_reg {
             sources.push("aemps_dossier_aip".to_string());
-            notes.push(format!("Registration number contains AIP marker: {}", med.nregistro));
+            notes.push(format!(
+                "Registration number contains AIP marker: {}",
+                med.nregistro
+            ));
         }
         if is_lab_importer {
             sources.push("importer_catalog".to_string());

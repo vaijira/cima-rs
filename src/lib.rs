@@ -18,8 +18,9 @@ pub use billing::{
     export_billing_data_to_csvs, extract_parallel_imports, generate_group_presentation_mappings,
     is_destination_spain, is_status_active, load_ema_register_csv,
     load_parallel_import_cns_from_prescriptions_csv, merge_ema_records, normalize_company_name,
-    parse_billing_csv, parse_billing_csv_reader, parse_ema_register_csv, tag_parallel_imports_from_ema,
-    tag_parallel_imports_from_prescriptions, tag_parallel_imports_with_detector,
+    parse_billing_csv, parse_billing_csv_reader, parse_ema_register_csv,
+    tag_parallel_imports_from_ema, tag_parallel_imports_from_prescriptions,
+    tag_parallel_imports_with_detector,
 };
 pub use downloader::{
     BILLING_NOMENCLATOR_EXPORT_URL, EMA_IRIS_REGISTER_URL, download_and_extract_nomenclator,
