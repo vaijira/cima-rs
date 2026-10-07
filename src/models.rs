@@ -477,3 +477,22 @@ impl MasterDataType {
         self as u8
     }
 }
+
+/// Detailed information when evaluating a medication dossier in CIMA for parallel import (AIP / I.P.).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParallelImportDossierInfo {
+    /// Registration number (Número de Registro)
+    pub nregistro: String,
+    /// Medication name
+    pub name: String,
+    /// Holder laboratory
+    pub labtitular: String,
+    /// Indicates whether the medication is recognized as a parallel import
+    pub is_parallel_import: bool,
+    /// Confidence score (0 to 100)
+    pub confidence_score: u8,
+    /// Detection source or triggers
+    pub detection_source: String,
+    /// Descriptive notes and evidence found in the CIMA dossier
+    pub notes: Vec<String>,
+}

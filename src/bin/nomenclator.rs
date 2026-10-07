@@ -1,9 +1,13 @@
 use cima_rs::billing::{
-    compute_homogeneous_groups, export_billing_data_to_csvs, extract_parallel_imports,
-    generate_group_presentation_mappings, load_parallel_import_cns_from_prescriptions_csv,
-    parse_billing_csv, tag_parallel_imports_from_prescriptions,
+    builtin_ema_spain_records, compute_homogeneous_groups, export_billing_data_to_csvs,
+    extract_parallel_imports, generate_group_presentation_mappings, load_ema_register_csv,
+    load_parallel_import_cns_from_prescriptions_csv, merge_ema_records, parse_billing_csv,
+    ParallelImportDetector, ParallelImporterCatalog,
 };
-use cima_rs::downloader::{download_and_extract_nomenclator, download_billing_nomenclator};
+use cima_rs::downloader::{
+    download_and_extract_nomenclator, download_billing_nomenclator,
+    download_ema_parallel_distribution_register,
+};
 use cima_rs::parser::{
     parse_atc_xml_to_csv, parse_dcp_xml_to_csv, parse_dcpf_xml_to_csv, parse_dcsa_xml_to_csv,
     parse_envases_xml_to_csv, parse_excipientes_xml_to_csv,
@@ -70,6 +74,20 @@ enum Commands {
         )]
         include_billing: bool,
 
+        /// Optional path or URL to EMA Parallel Distribution Register CSV file
+        #[arg(
+            long,
+            help = "Optional path or URL to EMA Parallel Distribution Register CSV file"
+        )]
+        ema_register: Option<String>,
+
+        /// Optional path to custom parallel importers catalog file for billing export
+        #[arg(
+            long,
+            help = "Optional path to custom parallel importers catalog file for billing"
+        )]
+        importers_list: Option<PathBuf>,
+
         /// Also export SNOMED CT España / AEMPS Terminology hierarchy CSVs (VTM -> VMP -> VMPP -> AMPP)
         #[arg(
             long,
@@ -126,6 +144,20 @@ enum BillingCommands {
             help = "Optional path to AEMPS prescriptions.csv for exact parallel import matching"
         )]
         prescriptions_csv: Option<PathBuf>,
+
+        /// Optional path or URL to EMA Parallel Distribution Register CSV file
+        #[arg(
+            long,
+            help = "Optional path or URL to EMA Parallel Distribution Register CSV file"
+        )]
+        ema_register: Option<String>,
+
+        /// Optional path to custom parallel importers catalog file (TXT or CSV)
+        #[arg(
+            long,
+            help = "Optional path to custom parallel importers catalog file"
+        )]
+        importers_list: Option<PathBuf>,
     },
     /// Query a specific Agrupación Homogénea (AH) by code
     Group {
@@ -160,6 +192,34 @@ enum BillingCommands {
             help = "Path to Nomenclátor de Facturación CSV"
         )]
         input_file: PathBuf,
+
+        /// Optional path or URL to EMA Parallel Distribution Register CSV file
+        #[arg(
+            long,
+            help = "Optional path or URL to EMA Parallel Distribution Register CSV file"
+        )]
+        ema_register: Option<String>,
+
+        /// Optional path to custom parallel importers catalog file
+        #[arg(
+            long,
+            help = "Optional path to custom parallel importers catalog file"
+        )]
+        importers_list: Option<PathBuf>,
+
+        /// Filter by minimum confidence score (e.g. 90, 95, 100)
+        #[arg(
+            long,
+            help = "Filter by minimum confidence score (e.g. 90, 95, 100)"
+        )]
+        min_confidence: Option<u8>,
+
+        /// Filter by detection source substring (e.g. 'ema', 'aemps', 'importer', 'syntax')
+        #[arg(
+            long,
+            help = "Filter by detection source substring (e.g. 'ema', 'aemps', 'importer')"
+        )]
+        source: Option<String>,
 
         /// Limit results
         #[arg(short, long, default_value = "20")]
@@ -271,6 +331,16 @@ enum ApiCommands {
         /// Show active ingredients
         #[arg(short, long)]
         activos: bool,
+    },
+    /// Check if a medication in CIMA corresponds to an authorized parallel import (AIP)
+    CheckImport {
+        /// Registration number
+        #[arg(long, group = "identifier")]
+        nregistro: Option<String>,
+
+        /// National code
+        #[arg(long, group = "identifier")]
+        cn: Option<String>,
     },
     /// Search medications
     SearchMedicamentos {
@@ -386,6 +456,8 @@ async fn main() -> anyhow::Result<()> {
             work_dir,
             concurrency,
             include_billing,
+            ema_register,
+            importers_list,
             include_terminology,
         } => {
             process_csv(
@@ -393,6 +465,8 @@ async fn main() -> anyhow::Result<()> {
                 work_dir,
                 concurrency,
                 include_billing,
+                ema_register,
+                importers_list,
                 include_terminology,
             )
             .await
@@ -405,11 +479,89 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+/// Resolves EMA Parallel Distribution Register records by:
+/// 1. Downloading from URL if an HTTP(S) URL is provided, or reading from disk if a path is given.
+/// 2. Checking if `work_dir/ema_parallel_distribution.csv` exists if no parameter is provided.
+/// 3. Merging the resolved records with `builtin_ema_spain_records()` so historical entries are never lost.
+/// 4. Falling back to the built-in curated baseline if offline or no file is found.
+async fn resolve_ema_register_records(
+    ema_register_arg: Option<&str>,
+    work_dir: &std::path::Path,
+) -> Vec<cima_rs::billing::EmaParallelDistributionRecord> {
+    let baseline = builtin_ema_spain_records();
+
+    let loaded = match ema_register_arg {
+        Some(target) => {
+            if target.starts_with("http://") || target.starts_with("https://") {
+                tracing::info!(url = target, "Downloading EMA Parallel Distribution Register from URL");
+                match download_ema_parallel_distribution_register(work_dir, Some(target)).await {
+                    Ok(path) => {
+                        tracing::info!(path = ?path, "Loading downloaded EMA Register CSV");
+                        load_ema_register_csv(&path).ok()
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Failed to download EMA register; falling back to baseline");
+                        None
+                    }
+                }
+            } else {
+                let path = std::path::Path::new(target);
+                if path.exists() {
+                    tracing::info!(path = ?path, "Loading EMA Parallel Distribution Register CSV from file");
+                    load_ema_register_csv(path).ok()
+                } else {
+                    tracing::warn!(path = ?path, "Specified EMA register path does not exist; falling back to baseline");
+                    None
+                }
+            }
+        }
+        None => {
+            let cached_path = work_dir.join("ema_parallel_distribution.csv");
+            if cached_path.exists() {
+                tracing::info!(path = ?cached_path, "Found cached EMA Parallel Distribution Register CSV in work directory");
+                load_ema_register_csv(&cached_path).ok()
+            } else {
+                tracing::info!("Downloading EMA Parallel Distribution Register from official portal");
+                match download_ema_parallel_distribution_register(work_dir, None).await {
+                    Ok(path) => {
+                        tracing::info!(path = ?path, "Loading downloaded EMA Register CSV");
+                        load_ema_register_csv(&path).ok()
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Could not automatically download EMA register; falling back to built-in catalog");
+                        None
+                    }
+                }
+            }
+        }
+    };
+
+    match loaded {
+        Some(records) => {
+            tracing::info!(
+                loaded_records = records.len(),
+                baseline_records = baseline.len(),
+                "Merging loaded EMA register with baseline records to prevent loss of historical data"
+            );
+            merge_ema_records(records, baseline)
+        }
+        None => {
+            tracing::info!(
+                baseline_records = baseline.len(),
+                "Using built-in EMA Parallel Distribution Register catalog for Spain"
+            );
+            baseline
+        }
+    }
+}
+
 async fn process_csv(
     output_dir: PathBuf,
     work_dir: PathBuf,
     concurrency: Option<usize>,
     include_billing: bool,
+    ema_register: Option<String>,
+    importers_list: Option<PathBuf>,
     include_terminology: bool,
 ) -> anyhow::Result<()> {
     // Ensure directories exist
@@ -573,11 +725,18 @@ async fn process_csv(
             Ok(billing_path) => match parse_billing_csv(&billing_path) {
                 Ok(mut products) => {
                     let presc_csv = output_dir.join("prescriptions.csv");
-                    if presc_csv.exists()
-                        && let Ok(cns) = load_parallel_import_cns_from_prescriptions_csv(&presc_csv)
-                    {
-                        tag_parallel_imports_from_prescriptions(&mut products, &cns);
-                    }
+                    let aemps_cns = if presc_csv.exists() {
+                        load_parallel_import_cns_from_prescriptions_csv(&presc_csv).unwrap_or_default()
+                    } else {
+                        std::collections::HashSet::new()
+                    };
+                    let importer_catalog = match importers_list {
+                        Some(ref path) => ParallelImporterCatalog::from_file(path).unwrap_or_default(),
+                        None => ParallelImporterCatalog::new_default(),
+                    };
+                    let ema_records = resolve_ema_register_records(ema_register.as_deref(), &work_dir).await;
+                    let detector = ParallelImportDetector::new(importer_catalog, ema_records, aemps_cns);
+                    detector.tag_products(&mut products);
                     match export_billing_data_to_csvs(&products, &output_dir) {
                         Ok(summary) => {
                             println!("✓ Completed: billing_products.csv");
@@ -761,6 +920,28 @@ async fn process_api(api_command: ApiCommands) -> anyhow::Result<()> {
                         _ => "Otro",
                     };
                     println!("- {}: {}", tipo, doc.url);
+                }
+            }
+        }
+        ApiCommands::CheckImport { nregistro, cn } => {
+            let info = client
+                .check_parallel_import(nregistro.as_deref(), cn.as_deref())
+                .await?;
+
+            println!("=== Verificación de Importación Paralela en CIMA ===");
+            println!("Nº Registro:   {}", info.nregistro);
+            println!("Nombre:        {}", info.name);
+            println!("Laboratorio:   {}", info.labtitular);
+            println!(
+                "Es I.P.:       {}",
+                if info.is_parallel_import { "SÍ" } else { "NO" }
+            );
+            println!("Confianza:     {}%", info.confidence_score);
+            println!("Detección:     {}", info.detection_source);
+            if !info.notes.is_empty() {
+                println!("\nEvidencias:");
+                for note in &info.notes {
+                    println!("  • {}", note);
                 }
             }
         }
@@ -1021,6 +1202,8 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
             input_file,
             work_dir,
             prescriptions_csv,
+            ema_register,
+            importers_list,
         } => {
             let csv_path = match input_file {
                 Some(p) => {
@@ -1050,7 +1233,20 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
                 }
             });
 
-            if let Some(ref p_path) = presc_path
+            // 1. Parallel Importers Catalog
+            let importer_catalog = match importers_list {
+                Some(ref path) => {
+                    tracing::info!(path = ?path, "Loading custom parallel importers list");
+                    ParallelImporterCatalog::from_file(path)?
+                }
+                None => ParallelImporterCatalog::new_default(),
+            };
+
+            // 2. EMA Parallel Distribution Register
+            let ema_records = resolve_ema_register_records(ema_register.as_deref(), &work_dir).await;
+
+            // 3. AEMPS Prescriptions official cross-reference
+            let aemps_cns = if let Some(ref p_path) = presc_path
                 && p_path.exists()
             {
                 tracing::info!(
@@ -1060,17 +1256,23 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
                 match load_parallel_import_cns_from_prescriptions_csv(p_path) {
                     Ok(cns) => {
                         let count = cns.len();
-                        tag_parallel_imports_from_prescriptions(&mut products, &cns);
-                        tracing::info!(matched_cns = count, "Tagged parallel imports from AEMPS");
+                        tracing::info!(matched_cns = count, "Loaded official parallel import CNs from AEMPS");
+                        cns
                     }
                     Err(e) => {
                         tracing::warn!(
                             error = %e,
                             "Could not read prescriptions.csv for parallel imports, relying on heuristics"
                         );
+                        std::collections::HashSet::new()
                     }
                 }
-            }
+            } else {
+                std::collections::HashSet::new()
+            };
+
+            let detector = ParallelImportDetector::new(importer_catalog, ema_records, aemps_cns);
+            detector.tag_products(&mut products);
 
             tracing::info!(output_dir = ?output_dir, "Exporting relational CSVs for database import");
             let summary = export_billing_data_to_csvs(&products, &output_dir)?;
@@ -1182,6 +1384,10 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
             group_code,
             input_file,
             limit,
+            ema_register,
+            importers_list,
+            min_confidence,
+            source,
         } => {
             if !input_file.exists() {
                 anyhow::bail!(
@@ -1189,7 +1395,21 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
                     input_file
                 );
             }
-            let products = parse_billing_csv(&input_file)?;
+            let mut products = parse_billing_csv(&input_file)?;
+
+            let importer_catalog = match importers_list {
+                Some(ref path) => ParallelImporterCatalog::from_file(path)?,
+                None => ParallelImporterCatalog::new_default(),
+            };
+            let work_dir = input_file.parent().unwrap_or(std::path::Path::new("."));
+            let ema_records = resolve_ema_register_records(ema_register.as_deref(), work_dir).await;
+            let detector = ParallelImportDetector::new(
+                importer_catalog,
+                ema_records,
+                std::collections::HashSet::new(),
+            );
+            detector.tag_products(&mut products);
+
             let mut pis = extract_parallel_imports(&products);
 
             if only_active {
@@ -1197,6 +1417,13 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
             }
             if let Some(ref g_code) = group_code {
                 pis.retain(|p| p.homogeneous_group_code.as_deref() == Some(g_code.as_str()));
+            }
+            if let Some(min_conf) = min_confidence {
+                pis.retain(|p| p.confidence_score >= min_conf);
+            }
+            if let Some(ref src) = source {
+                let lower_src = src.to_lowercase();
+                pis.retain(|p| p.detection_source.to_lowercase().contains(&lower_src));
             }
 
             println!("=== Importaciones Paralelas ===");
@@ -1222,9 +1449,15 @@ async fn process_billing(billing_command: BillingCommands) -> anyhow::Result<()>
                     );
                 }
                 println!(
-                    "   Estado: {} (Detección: {})",
-                    pi.status, pi.detection_source
+                    "   Confianza: {}% | Detección: {} | Estado: {}",
+                    pi.confidence_score, pi.detection_source, pi.status
                 );
+                if let Some(ref origin) = pi.origin_country {
+                    println!("   Origen (EMA): {}", origin);
+                }
+                if let Some(ref ema_notif) = pi.ema_notification_number {
+                    println!("   Ref. EMA: {}", ema_notif);
+                }
                 println!();
             }
             Ok(())

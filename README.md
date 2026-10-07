@@ -59,27 +59,58 @@ This will:
 - Parse them in parallel to CSV format
 - Generate 20+ CSV files ready for database import
 
-#### Billing Mode: Nomenclátor de Facturación (Homogeneous Groups & Prices)
+#### Billing Mode: Nomenclátor de Facturación (Homogeneous Groups, Prices & Parallel Imports)
 
 ```bash
 # Download and export relational CSV files ready for database import
 nomenclator billing export --output-dir ./billing_output
 
-# Export using an existing local file and cross-reference with AEMPS prescriptions
-nomenclator billing export --input-file ./nomenclator.csv --prescriptions-csv ./output/prescriptions.csv --output-dir ./billing_output
+# Export with AEMPS prescriptions, official EMA Parallel Distribution Register, and custom importers catalog
+nomenclator billing export \
+  --input-file ./nomenclator.csv \
+  --prescriptions-csv ./output/prescriptions.csv \
+  --ema-register ./ema_parallel_distribution.csv \
+  --importers-list ./importers.txt \
+  --output-dir ./billing_output
 
 # Query a specific Agrupación Homogénea (shows PM, PAB, and presentations)
 nomenclator billing group --code 1941
 
-# List parallel imports
-nomenclator billing parallel-imports --only-active --limit 20
+# Filter and list parallel imports with confidence score and source filters
+nomenclator billing parallel-imports --only-active --min-confidence 95 --source ema --limit 20
 ```
 
 This exports 4 clean relational CSV files:
-1. `billing_products.csv`: Full normalized product and pricing catalog
+1. `billing_products.csv`: Full normalized product and pricing catalog (includes parallel import detection flags, confidence score, and origin country)
 2. `homogeneous_groups.csv`: Agrupaciones Homogéneas with official Precio Menor (PM) and calculated Precio Más Bajos (PAB)
 3. `group_presentations.csv`: Relational mapping table linking presentations to groups and identifying `[★ PAB]` items
-4. `parallel_imports.csv`: Identified parallel import presentations with commercialization and pricing data
+4. `parallel_imports.csv`: Identified parallel import presentations with confidence scores (90-100%), detection provenance, country of origin, and EMA notification references
+
+##### Multi-Tiered Parallel Import Detection Algorithm
+
+`cima-rs` implements a 3-pillar algorithm combining national and EU regulatory data sources:
+
+1. **Directorio de Empresas Importadoras y Reacondicionadoras (Parallel Importer Catalog)**:
+   - Curated catalog of verified pharmaceutical parallel distributors and repackagers operating in Spain and the EU (*Abacus Medicine, Orifarm, EurimPharm, Kohlpharma, Disfarma, Farmalep, Galia Farma, Garanty Farma, Euroceps, Proinpharma, Top Ridge Pharma, etc.*).
+   - Legal entity suffix normalization (*S.A., S.L., A/S, GmbH, B.V.*) to match corporate variants.
+   - Support for custom external importer lists via `--importers-list <PATH>`.
+   - **Confidence: 95%** (`importer_catalog`).
+
+2. **Cruce con CIMA / AEMPS (Official National AIP & Prescriptions)**:
+   - Authoritative offline matching against AEMPS `Prescripcion.xml` / `prescriptions.csv` (`<importacion_paralela>1</importacion_paralela>`).
+   - Online verification of individual medication dossiers via CIMA REST API (`nomenclator api check-import --cn <CN>`).
+   - **Confidence: 100%** (`aemps_official`).
+
+3. **Cruce con el Registro de Distribución Paralela de la EMA (Centrally Authorised Products - IRIS)**:
+   - Cross-referencing against the European Medicines Agency (EMA) public register of parallel distribution notifications for destination Spain (*España / ES*).
+   - Built-in baseline of high-impact centrally authorized drugs subject to parallel distribution into Spain (*Eliquis, Enbrel, Humira, Keytruda, Ozempic, Xarelto, Prolia, Stelara, Entresto, Revlimid, Januvia, etc.*).
+   - Ingests official EMA IRIS CSV exports via `--ema-register <PATH_OR_URL>` or auto-detects `ema_parallel_distribution.csv` in the work directory. Non-destructively merges downloaded records with the built-in baseline so historical notices are preserved even when the EMA registry list changes.
+   - Extracts member state of origin (*Germany, France, Italy, Poland, etc.*) and EMA notification identifiers.
+   - **Confidence: 100%** (`ema_register`).
+
+4. **Name Syntax Heuristic**:
+   - Detects parallel import markers in product names: `(I.P.)`, `(IP)`, `(IMP.PAR.)`, `IMPORTACION PARALELA`.
+   - **Confidence: 90%** (`name_syntax`).
 
 #### Terminology Mode: SNOMED CT España / AEMPS Clinical Hierarchy
 
@@ -116,6 +147,10 @@ nomenclator api search-medicamentos --laboratorio "Pfizer" --comercializados
 
 # Get presentation details
 nomenclator api presentacion --cn 12345678
+
+# Check if a medication in CIMA is an authorized parallel import (AIP)
+nomenclator api check-import --cn 650999
+nomenclator api check-import --nregistro 82941
 
 # Get supply problems
 nomenclator api supply-problems

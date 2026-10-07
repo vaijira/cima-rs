@@ -194,6 +194,73 @@ impl CimaClient {
             .await
             .context("Failed to search in technical sheet")
     }
+
+    /// Checks whether a medication dossier in CIMA corresponds to an authorized parallel import (AIP / I.P.).
+    pub async fn check_parallel_import(
+        &self,
+        registration_number: Option<&str>,
+        national_code: Option<&str>,
+    ) -> Result<crate::models::ParallelImportDossierInfo> {
+        let med = self.get_medication(registration_number, national_code).await?;
+        let catalog = crate::billing::ParallelImporterCatalog::new_default();
+        let is_lab_importer = catalog.is_importer(&med.labtitular);
+        let has_syntax = crate::billing::detect_parallel_import_syntax(&med.name);
+        let is_aip_reg = med.nregistro.to_uppercase().contains("AIP");
+
+        let mut sources = Vec::new();
+        let mut notes = Vec::new();
+
+        if is_aip_reg {
+            sources.push("aemps_dossier_aip".to_string());
+            notes.push(format!("Registration number contains AIP marker: {}", med.nregistro));
+        }
+        if is_lab_importer {
+            sources.push("importer_catalog".to_string());
+            notes.push(format!(
+                "Marketing authorization holder is a known parallel distributor: {}",
+                med.labtitular
+            ));
+        }
+        if has_syntax {
+            sources.push("name_syntax".to_string());
+            notes.push("Product name includes parallel import marker (I.P.)".to_string());
+        }
+        if let Some(ema) = med.ema
+            && ema
+            && is_lab_importer
+        {
+            sources.push("ema_centrally_authorized".to_string());
+            notes.push(
+                "Centrally authorized EMA product held by parallel distributor in Spain"
+                    .to_string(),
+            );
+        }
+
+        let is_pi = !sources.is_empty();
+        let confidence = if is_aip_reg || (!sources.is_empty() && is_lab_importer && has_syntax) {
+            100
+        } else if is_lab_importer {
+            95
+        } else if has_syntax {
+            90
+        } else {
+            0
+        };
+
+        Ok(crate::models::ParallelImportDossierInfo {
+            nregistro: med.nregistro,
+            name: med.name,
+            labtitular: med.labtitular,
+            is_parallel_import: is_pi,
+            confidence_score: confidence,
+            detection_source: if sources.is_empty() {
+                "none".to_string()
+            } else {
+                sources.join(",")
+            },
+            notes,
+        })
+    }
 }
 
 #[cfg(test)]
