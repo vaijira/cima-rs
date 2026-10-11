@@ -7,7 +7,7 @@ Rust library providing access to the [AEMPS CIMA](https://cima.aemps.es/cima/pub
 - **XML Data Dumps**: Download and parse CIMA nomenclator XML files to CSV
 - **SNS Billing Nomenclator**: Download and export official Ministerio de Sanidad *Nomenclátor de Facturación* data to relational database-ready CSVs:
   - **Agrupaciones Homogéneas (AH)**: Official group codes and descriptions
-  - **Pricing**: PVP con IVA, Precio de Referencia, Precios Menores (PM), and Precios Más Bajos (PAB)
+  - **Pricing**: VAT rate (4% / 10%), PVP con IVA, PVP sin IVA, PVL (Precio de Venta de Laboratorio via RD 823/2008), Precio de Referencia, Precios Menores (PM), and Precios Más Bajos (PAB)
   - **Funding & Co-payment**: ALTA/BAJA status, co-payment tiers (NORMAL, ESPECIAL, SIN APORTACION)
   - **Parallel Imports (I.P.)**: Identification and cross-referencing of parallel-distributed medicines
 - **SNOMED CT España / AEMPS Clinical Terminology**: Full 4-tier hierarchical representation:

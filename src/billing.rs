@@ -32,8 +32,14 @@ pub struct BillingProduct {
     pub beneficiary_copay: Option<String>,
     /// Active ingredient or active ingredients association
     pub active_ingredient: Option<String>,
+    /// Statutory VAT rate (0.04 for medications, 0.10 for healthcare accessories/effects)
+    pub vat_rate: f64,
     /// Retail price with VAT (PVP con IVA)
     pub pvp_iva: Option<f64>,
+    /// Retail price without VAT (PVP sin IVA)
+    pub pvp: Option<f64>,
+    /// Ex-factory / Laboratory price (Precio de Venta de Laboratorio - PVL, RD 823/2008)
+    pub pvl: Option<f64>,
     /// Reference price (Precio de referencia)
     pub reference_price: Option<f64>,
     /// Lowest price of homogeneous group (Precio Menor de la agrupación)
@@ -159,6 +165,57 @@ fn parse_price(val: &str) -> Option<f64> {
     }
     let sanitized = trimmed.replace(',', ".");
     sanitized.parse::<f64>().ok()
+}
+
+/// Rounds a floating-point monetary amount to 2 decimal places (cents).
+fn round_cents(val: f64) -> f64 {
+    (val * 100.0).round() / 100.0
+}
+
+/// Returns the statutory Spanish VAT rate (Ley 37/1992, Art. 91) for a billing product:
+/// - `0.10` (10% IVA reducido) for healthcare accessories/devices (*Efectos y Accesorios*, when `generic_accessory_name` is present).
+/// - `0.04` (4% IVA superreducido) for human medications.
+pub fn compute_vat_rate(generic_accessory_name: Option<&str>) -> f64 {
+    if generic_accessory_name.is_some_and(|s| !s.trim().is_empty()) {
+        0.10
+    } else {
+        0.04
+    }
+}
+
+/// Computes the retail price excluding VAT (`PVP sin IVA`) from `PVP con IVA` and the applicable VAT rate.
+pub fn compute_pvp_sin_iva(pvp_iva: f64, vat_rate: f64) -> f64 {
+    round_cents(pvp_iva / (1.0 + vat_rate))
+}
+
+/// Computes the statutory Ex-Factory / Laboratory Price (`PVL` - Precio de Venta de Laboratorio)
+/// from `PVP sin IVA` according to **Real Decreto 823/2008** (and subsequent updates):
+///
+/// - For **Healthcare Accessories (*Efectos y Accesorios*)**:
+///   - Wholesale margin: 6.0% on PVD; Pharmacy margin: 21.0% on PVP (`PVL = PVP * 0.79 * 0.94 = PVP * 0.7426`).
+/// - For **Human Medications**:
+///   - **Tramo 1** (`PVP <= 137.54 €` / `PVL <= 91.63 €`):
+///     Wholesale margin 7.6% on PVD, Pharmacy margin 27.9% on PVP (`PVL = PVP * 0.721 * 0.924 = PVP * 0.666204`).
+///   - **Tramo 2** (`137.54 € < PVP <= 245.91 €` / `91.63 € < PVL <= 200.00 €`):
+///     Fixed wholesale margin `7.54 €` + fixed pharmacy margin `38.37 €` (`PVL = PVP - 45.91 €`).
+///   - **Tramo 3** (`245.91 € < PVP <= 550.91 €` / `200.00 € < PVL <= 500.00 €`):
+///     Fixed wholesale margin `7.54 €` + fixed pharmacy margin `43.37 €` (`PVL = PVP - 50.91 €`).
+///   - **Tramo 4** (`PVP > 550.91 €` / `PVL > 500.00 €`):
+///     Fixed wholesale margin `7.54 €` + fixed pharmacy margin `48.37 €` (`PVL = PVP - 55.91 €`).
+pub fn compute_pvl(pvp_sin_iva: f64, generic_accessory_name: Option<&str>) -> f64 {
+    let is_accessory = generic_accessory_name.is_some_and(|s| !s.trim().is_empty());
+    let raw_pvl = if is_accessory {
+        pvp_sin_iva * 0.79 * 0.94
+    } else if pvp_sin_iva <= 137.54 {
+        pvp_sin_iva * 0.721 * 0.924
+    } else if pvp_sin_iva <= 245.91 {
+        pvp_sin_iva - 45.91
+    } else if pvp_sin_iva <= 550.91 {
+        pvp_sin_iva - 50.91
+    } else {
+        pvp_sin_iva - 55.91
+    };
+    round_cents(raw_pvl)
 }
 
 /// Normalizes boolean fields from Spanish "SI"/"NO"/empty strings.
@@ -1324,7 +1381,10 @@ pub fn parse_billing_csv_reader<R: Read>(reader: R) -> Result<Vec<BillingProduct
         let cancellation_date = clean_opt(get_val(idx_canc_date));
         let beneficiary_copay = clean_opt(get_val(idx_copay));
         let active_ingredient = clean_opt(get_val(idx_active_ing));
+        let vat_rate = compute_vat_rate(generic_accessory_name.as_deref());
         let pvp_iva = parse_price(get_val(idx_pvp));
+        let pvp = pvp_iva.map(|p| compute_pvp_sin_iva(p, vat_rate));
+        let pvl = pvp.map(|p| compute_pvl(p, generic_accessory_name.as_deref()));
         let reference_price = parse_price(get_val(idx_ref_price));
         let group_lowest_price = parse_price(get_val(idx_lowest_price));
         let homogeneous_group_code = clean_opt(get_val(idx_group_code));
@@ -1367,7 +1427,10 @@ pub fn parse_billing_csv_reader<R: Read>(reader: R) -> Result<Vec<BillingProduct
             cancellation_date,
             beneficiary_copay,
             active_ingredient,
+            vat_rate,
             pvp_iva,
+            pvp,
+            pvl,
             reference_price,
             group_lowest_price,
             homogeneous_group_code,
@@ -2060,5 +2123,43 @@ Xarelto,rivaroxaban,EU/1/08/472,Kohlpharma GmbH,Spain,Germany,Withdrawn,EMA/PD/0
             eliquis.notification_number.as_deref(),
             Some("EMAPD/2026/01")
         );
+    }
+
+    #[test]
+    fn test_statutory_pricing_vat_pvp_pvl() {
+        // 1. Tramo 1 medication (PVP <= 137.54 €): Paracetamol 1g (PVP con IVA = 2.50 €)
+        let vat_med = compute_vat_rate(None);
+        assert_eq!(vat_med, 0.04);
+        let pvp_t1 = compute_pvp_sin_iva(2.50, vat_med);
+        assert_eq!(pvp_t1, 2.40); // 2.50 / 1.04 = 2.4038... -> 2.40
+        let pvl_t1 = compute_pvl(pvp_t1, None);
+        assert_eq!(pvl_t1, 1.60); // 2.40 * 0.721 * 0.924 = 1.5988... -> 1.60
+
+        // Exact boundary of Tramo 1 (PVL = 91.63 € -> PVP = 137.54 € -> PVP con IVA = 143.04 €)
+        let pvp_t1_max = compute_pvp_sin_iva(143.04, 0.04);
+        assert_eq!(pvp_t1_max, 137.54);
+        assert_eq!(compute_pvl(pvp_t1_max, None), 91.63);
+
+        // 2. Tramo 2 medication (137.54 < PVP <= 245.91 €): PVL = 150.00 € -> PVP = 195.91 € -> PVP_IVA = 203.75 €
+        let pvp_t2 = compute_pvp_sin_iva(203.75, 0.04);
+        assert_eq!(pvp_t2, 195.91);
+        assert_eq!(compute_pvl(pvp_t2, None), 150.00);
+
+        // 3. Tramo 3 medication (245.91 < PVP <= 550.91 €): PVL = 300.00 € -> PVP = 350.91 € -> PVP_IVA = 364.95 €
+        let pvp_t3 = compute_pvp_sin_iva(364.95, 0.04);
+        assert_eq!(pvp_t3, 350.91);
+        assert_eq!(compute_pvl(pvp_t3, None), 300.00);
+
+        // 4. Tramo 4 medication (PVP > 550.91 €): e.g. Keytruda (PVP con IVA = 3737.01 €)
+        let pvp_t4 = compute_pvp_sin_iva(3737.01, 0.04);
+        assert_eq!(pvp_t4, 3593.28);
+        assert_eq!(compute_pvl(pvp_t4, None), 3537.37);
+
+        // 5. Healthcare accessory (Efecto y Accesorio): 10% VAT, 6% wholesale + 21% pharmacy margin
+        let vat_acc = compute_vat_rate(Some("APOSITO HIDROCOLOIDE"));
+        assert_eq!(vat_acc, 0.10);
+        let pvp_acc = compute_pvp_sin_iva(11.00, vat_acc);
+        assert_eq!(pvp_acc, 10.00);
+        assert_eq!(compute_pvl(pvp_acc, Some("APOSITO HIDROCOLOIDE")), 7.43); // 10.00 * 0.7426 = 7.426 -> 7.43
     }
 }

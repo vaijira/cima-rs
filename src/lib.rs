@@ -14,12 +14,12 @@ pub use billing::{
     BillingExportSummary, BillingProduct, DEFAULT_KNOWN_IMPORTERS, EmaParallelDistributionIndex,
     EmaParallelDistributionRecord, GroupPresentationMapping, HomogeneousGroup,
     ParallelImportDetection, ParallelImportDetector, ParallelImportRecord, ParallelImporterCatalog,
-    builtin_ema_spain_records, compute_homogeneous_groups, detect_parallel_import_syntax,
-    export_billing_data_to_csvs, extract_parallel_imports, generate_group_presentation_mappings,
-    is_destination_spain, is_status_active, load_ema_register_csv,
-    load_parallel_import_cns_from_prescriptions_csv, merge_ema_records, normalize_company_name,
-    parse_billing_csv, parse_billing_csv_reader, parse_ema_register_csv,
-    tag_parallel_imports_from_ema, tag_parallel_imports_from_prescriptions,
+    builtin_ema_spain_records, compute_homogeneous_groups, compute_pvl, compute_pvp_sin_iva,
+    compute_vat_rate, detect_parallel_import_syntax, export_billing_data_to_csvs,
+    extract_parallel_imports, generate_group_presentation_mappings, is_destination_spain,
+    is_status_active, load_ema_register_csv, load_parallel_import_cns_from_prescriptions_csv,
+    merge_ema_records, normalize_company_name, parse_billing_csv, parse_billing_csv_reader,
+    parse_ema_register_csv, tag_parallel_imports_from_ema, tag_parallel_imports_from_prescriptions,
     tag_parallel_imports_with_detector,
 };
 pub use downloader::{
